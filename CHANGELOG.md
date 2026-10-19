@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.3.0
 
 More ways to install, matching Open Task Manager's download list:
 

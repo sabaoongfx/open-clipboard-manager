@@ -1,4 +1,4 @@
-﻿"""The contract every OS backend (platform_windows.py, platform_macos.py) implements.
+"""The contract every OS backend (platform_windows.py, platform_macos.py) implements.
 
 Declaring it as an abstract class means a backend that forgets a method fails when it is created,
 not later when a user happens to press the matching button.
@@ -7,7 +7,7 @@ import os
 from abc import ABC, abstractmethod
 
 APP_NAME = "Open Clipboard Manager"
-APP_VERSION = "0.2.1"  # bump here, then tag v<version> (see CLAUDE.md > Releasing)
+APP_VERSION = "0.3.0"  # bump here, then tag v<version> (see CLAUDE.md > Releasing)
 APP_DIR = os.path.dirname(os.path.abspath(__file__))
 ENTRY_SCRIPT = os.path.join(APP_DIR, "winclipman.py")  # what "start at login" launches
 

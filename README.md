@@ -1,4 +1,4 @@
-﻿<p align="center">
+<p align="center">
   <img src="public/open-clipboard-manager.svg" width="72" alt="Open Clipboard Manager logo" />
 </p>
 
@@ -46,48 +46,63 @@ title and toolbar, a flat table, rounded controls, and light/dark colours that f
 
 ## Install
 
+Every file below is also attached to the [latest release](https://github.com/sabaoongfx/open-clipboard-manager/releases/latest)
+together with `SHA256SUMS.txt`, and every link always gives the newest version. Nothing is code-signed yet, so
+Windows SmartScreen and macOS Gatekeeper will warn the first time (see each system).
+
 ### Windows
 
-Download [`Open-Clipboard-Manager-x64.exe`](https://github.com/sabaoongfx/open-clipboard-manager/releases/latest/download/Open-Clipboard-Manager-x64.exe)
-(always the newest version) and run it. It is a single portable file; the first launch takes a few
-seconds while it unpacks. It isn't code-signed yet, so SmartScreen may warn you: choose
-*More info → Run anyway*. A checksum file (`SHA256SUMS.txt`) is attached to every release.
+- [`Open-Clipboard-Manager-x64-setup.exe`](https://github.com/sabaoongfx/open-clipboard-manager/releases/latest/download/Open-Clipboard-Manager-x64-setup.exe):
+  the installer. It installs for your user only (no administrator prompt) unless you choose otherwise, adds a
+  Start menu entry and an optional desktop shortcut, and can be removed from *Settings → Apps*.
+- [`Open-Clipboard-Manager-x64.exe`](https://github.com/sabaoongfx/open-clipboard-manager/releases/latest/download/Open-Clipboard-Manager-x64.exe):
+  a single portable file with no install. It takes a few seconds to start, because it unpacks itself every time;
+  the installed version starts faster.
 
-The app lives in the system tray; use *Settings → Start at login* to launch it with Windows.
-
-### Linux
-
-Download [`Open-Clipboard-Manager-x86_64`](https://github.com/sabaoongfx/open-clipboard-manager/releases/latest/download/Open-Clipboard-Manager-x86_64),
-make it executable and run it:
-
-```bash
-chmod +x Open-Clipboard-Manager-x86_64
-./Open-Clipboard-Manager-x86_64
-```
-
-It needs a few helper programs from your package manager:
-
-| What for                  | X11                | Wayland                            |
-| ------------------------- | ------------------ | ---------------------------------- |
-| Reading/writing clipboard | `xclip`            | `wl-clipboard`                     |
-| Pasting into the old window | `xdotool`        | `wtype` (or `ydotool`)             |
-| Global hotkey (Super+V)   | built in (X11 only)| not possible: see below            |
-
-On **Wayland** no application can grab a global key, so bind a desktop shortcut (for example Super+V in
-your desktop's keyboard settings) to `Open-Clipboard-Manager-x86_64 --show`. It opens the window of the
-running copy. On GNOME the tray icon also needs the AppIndicator extension. Wayland support needs a
-compositor that allows `wl-clipboard` to read the clipboard in the background (wlroots-based ones do;
-GNOME may flicker).
+SmartScreen may say "Windows protected your PC": choose *More info → Run anyway*. The app lives in the system
+tray; use *Settings → Start at login* to launch it with Windows.
 
 ### macOS
 
-Download [`Open-Clipboard-Manager-macos-arm64.zip`](https://github.com/sabaoongfx/open-clipboard-manager/releases/latest/download/Open-Clipboard-Manager-macos-arm64.zip)
-(Apple Silicon), unzip it and drag the app to Applications. It isn't signed or notarized, so the first
-time, right-click the app and choose *Open*. Auto-paste needs the Accessibility permission under
-*System Settings → Privacy & Security*.
+Download the disk image for your Mac, open it, and drag **Open Clipboard Manager** to *Applications*:
 
-The macOS build is started and checked by CI on a real Mac, and the tests run there, but nobody has used
-the clipboard, hotkey and paste on a Mac yet, so expect rough edges and please report them.
+- [`Open-Clipboard-Manager-aarch64.dmg`](https://github.com/sabaoongfx/open-clipboard-manager/releases/latest/download/Open-Clipboard-Manager-aarch64.dmg): Apple Silicon (M1 and newer)
+- [`Open-Clipboard-Manager-x64.dmg`](https://github.com/sabaoongfx/open-clipboard-manager/releases/latest/download/Open-Clipboard-Manager-x64.dmg): Intel
+
+The app isn't signed or notarized, so the first time, right-click it and choose *Open*. Auto-paste needs the
+Accessibility permission under *System Settings → Privacy & Security*. The hotkey is **Ctrl+Cmd+V**, because
+Cmd+V is the system Paste shortcut.
+
+CI starts the app on a real Mac (both chips) and runs it from the mounted image, but nobody has used the
+clipboard, hotkey and paste on a Mac yet, so expect rough edges and please report them.
+
+### Linux
+
+Pick the package for your distribution (x86_64):
+
+- [`Open-Clipboard-Manager-amd64.deb`](https://github.com/sabaoongfx/open-clipboard-manager/releases/latest/download/Open-Clipboard-Manager-amd64.deb): Debian, Ubuntu, Linux Mint, Pop!_OS
+  `sudo apt install ./Open-Clipboard-Manager-amd64.deb`
+- [`Open-Clipboard-Manager-x86_64.rpm`](https://github.com/sabaoongfx/open-clipboard-manager/releases/latest/download/Open-Clipboard-Manager-x86_64.rpm): Fedora, openSUSE
+  `sudo dnf install ./Open-Clipboard-Manager-x86_64.rpm`
+- [`Open-Clipboard-Manager-x86_64`](https://github.com/sabaoongfx/open-clipboard-manager/releases/latest/download/Open-Clipboard-Manager-x86_64): a single binary for any other distribution:
+  `chmod +x Open-Clipboard-Manager-x86_64 && ./Open-Clipboard-Manager-x86_64`
+
+The packages add an *Open Clipboard Manager* entry to the app menu and a `open-clipboard-manager` command. The
+`.deb` is installed and run on Ubuntu and the `.rpm` on Fedora in CI; neither has been used on a real desktop yet.
+
+It needs a few helper programs from your package manager (the `.deb` and `.rpm` recommend them):
+
+| What for                    | X11                 | Wayland                            |
+| --------------------------- | ------------------- | ---------------------------------- |
+| Reading/writing clipboard   | `xclip`             | `wl-clipboard`                     |
+| Pasting into the old window | `xdotool`           | `wtype` (or `ydotool`)             |
+| Global hotkey (Super+V)     | built in (X11 only) | not possible: see below            |
+
+On **Wayland** no application can grab a global key, so bind a desktop shortcut (for example Super+V in
+your desktop's keyboard settings) to `open-clipboard-manager --show`. It opens the window of the
+running copy. On GNOME the tray icon also needs the AppIndicator extension. Wayland support needs a
+compositor that allows `wl-clipboard` to read the clipboard in the background (wlroots-based ones do;
+GNOME may flicker).
 
 ### From source (any of the three)
 
@@ -139,7 +154,7 @@ that follows the operating system each time the window opens.
 ## Roadmap
 
 - Using the macOS and Linux backends on real machines, and fixing what that turns up.
-- Intel macOS and ARM Linux builds.
+- ARM Linux builds, an AppImage and an MSI.
 - Signed Windows builds and a notarized macOS app.
 - Rounded table rows and scrollbar (the standard Tk table can't draw them).
 - Sharper rendering on high-DPI screens.
@@ -203,11 +218,10 @@ python tools/make_assets.py     # writes assets/icon.png, assets/icon.ico, publi
 
 1. Bump `APP_VERSION` in `platform_base.py` and add an entry to `CHANGELOG.md`.
 2. Push a `v*` tag. `.github/workflows/release.yml` runs the tests on Windows, Linux and macOS, builds
-   the Windows exe, the Linux binary and the macOS app, starts each one and checks that a second launch
-   hands over to the first (`tools/smoke_test.py`), then attaches them, plus `SHA256SUMS.txt`, to a
-   **draft** GitHub release. Files are uploaded under versionless names (`Open-Clipboard-Manager-x64.exe`,
-   `Open-Clipboard-Manager-x86_64`, `Open-Clipboard-Manager-macos-arm64.zip`), so the
-   `releases/latest/download/…` links in this README always give the newest version.
+   every package (Windows exe and installer, Linux binary, `.deb` and `.rpm`, macOS `.dmg` for both chips),
+   installs or mounts and starts each one (`tools/smoke_test.py` checks that a second launch hands over to the
+   first), then attaches them, plus `SHA256SUMS.txt`, to a **draft** GitHub release. Files use versionless
+   names, so the `releases/latest/download/…` links in this README always give the newest version.
 3. Publish the draft.
 
 `.github/workflows/ci.yml` runs the same tests on every push.
@@ -216,6 +230,7 @@ python tools/make_assets.py     # writes assets/icon.png, assets/icon.ico, publi
 
 ```
 winclipman.py         The app: history, actions, settings logic, events, tray, startup, command line
+appicon.py            The app icon, drawn with Pillow
 ui.py                 The window: theme, rounded widgets, pages (History, Images, Actions, Settings)
 instance.py           Single-instance link: a second launch / --show reaches the running copy
 platform_base.py      App name/version and the interface every OS backend implements
@@ -224,6 +239,8 @@ platform_linux.py     xclip / wl-clipboard, X11 hotkey, xdotool / wtype paste, a
 platform_macos.py     NSPasteboard, Carbon hotkey, paste, LaunchAgent autostart
 actions_*.json        Default actions per OS
 assets/, public/      Icon files and the logo (generated by tools/make_assets.py)
+installer/            Inno Setup script for the Windows installer
+packaging/linux/      .deb and .rpm build scripts and the desktop entry
 tools/                make_assets.py (icons), smoke_test.py (used by the release workflow)
 docs/                 README screenshots
 tests/                unittest suite
