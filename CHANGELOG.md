@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased
+
+More ways to install, matching Open Task Manager's download list:
+
+- **Windows installer** (`Open-Clipboard-Manager-x64-setup.exe`): per-user by default, Start menu entry, optional desktop shortcut, uninstaller. It installs the one-folder build, which starts faster than the portable exe.
+- **macOS disk images** (`Open-Clipboard-Manager-aarch64.dmg` for Apple Silicon and `-x64.dmg` for Intel) replace the `.zip`. The app is now called *Open Clipboard Manager* and has an icon.
+- **Intel macOS build.**
+- **Debian/Ubuntu package** (`Open-Clipboard-Manager-amd64.deb`) and **Fedora/openSUSE package** (`Open-Clipboard-Manager-x86_64.rpm`) with a `/usr/bin/open-clipboard-manager` launcher, an app-menu entry and an icon.
+- Every package is installed, started and removed (or mounted) in CI before a release is built.
+
 ## 0.2.1
 
 - **Copy button** in the History toolbar, plus a copy icon on every row: puts the entry on the clipboard without pasting it or closing the window.
