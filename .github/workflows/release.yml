@@ -1,4 +1,4 @@
-name: Release
+﻿name: Release
 
 on:
   push:
@@ -8,7 +8,11 @@ on:
 
 jobs:
   test:
-    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
 
@@ -16,13 +20,27 @@ jobs:
         with:
           python-version: '3.12'
 
+      - name: Install Linux dependencies (virtual display and Tk)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y xvfb python3-tk
+
       - name: Install dependencies
         run: pip install -r requirements.txt
 
+      - name: Run tests (Linux, under a virtual display)
+        if: runner.os == 'Linux'
+        run: xvfb-run -a python -m unittest discover -s tests -v
+
       - name: Run tests
+        if: runner.os != 'Linux'
         run: python -m unittest discover -s tests -v
 
-  publish-windows:
+  # Every file is uploaded under a versionless name, so
+  #   https://github.com/sabaoongfx/open-clipboard-manager/releases/latest/download/<name>
+  # (used by the README) always gives the newest release.
+  windows:
     needs: test
     permissions:
       contents: write
@@ -44,36 +62,110 @@ jobs:
           --icon assets/icon.ico
           --add-data "actions_windows.json;."
           --add-data "actions_macos.json;."
+          --add-data "actions_linux.json;."
           --hidden-import pystray._win32
           winclipman.py
-
-      - name: Checksums
-        shell: pwsh
-        run: |
-          Set-Location dist
-          $hash = (Get-FileHash Open-Clipboard-Manager-x64.exe -Algorithm SHA256).Hash.ToLower()
-          "$hash  Open-Clipboard-Manager-x64.exe" | Out-File -Encoding ascii SHA256SUMS.txt
 
       - uses: actions/upload-artifact@v4
         with:
           name: Open-Clipboard-Manager-x64
-          path: |
-            dist/Open-Clipboard-Manager-x64.exe
-            dist/SHA256SUMS.txt
+          path: dist/Open-Clipboard-Manager-x64.exe
 
-      # The file is uploaded under a versionless name, so
-      #   https://github.com/sabaoongfx/open-clipboard-manager/releases/latest/download/Open-Clipboard-Manager-x64.exe
-      # (used by the README) always gives the newest release.
-      - name: Attach to a draft release
-        if: startsWith(github.ref, 'refs/tags/')
-        shell: bash
+  linux:
+    needs: test
+    permissions:
+      contents: write
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install Tk
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y python3-tk
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt pyinstaller
+
+      - name: Build the executable
+        run: >
+          pyinstaller --noconfirm --clean --onefile --windowed
+          --name Open-Clipboard-Manager-x86_64
+          --add-data "actions_windows.json:."
+          --add-data "actions_macos.json:."
+          --add-data "actions_linux.json:."
+          --hidden-import pystray._xorg
+          winclipman.py
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Open-Clipboard-Manager-x86_64
+          path: dist/Open-Clipboard-Manager-x86_64
+
+  macos:
+    needs: test
+    permissions:
+      contents: write
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt pyinstaller
+
+      - name: Build the app
+        run: >
+          pyinstaller --noconfirm --clean --windowed
+          --name Open-Clipboard-Manager
+          --add-data "actions_windows.json:."
+          --add-data "actions_macos.json:."
+          --add-data "actions_linux.json:."
+          --hidden-import pystray._darwin
+          --hidden-import AppKit
+          --hidden-import Foundation
+          winclipman.py
+
+      - name: Zip the app
+        run: ditto -c -k --keepParent dist/Open-Clipboard-Manager.app Open-Clipboard-Manager-macos-arm64.zip
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Open-Clipboard-Manager-macos-arm64
+          path: Open-Clipboard-Manager-macos-arm64.zip
+
+  # One job creates the draft and attaches everything, so the build jobs never race to create it.
+  publish:
+    needs: [windows, linux, macos]
+    if: startsWith(github.ref, 'refs/tags/')
+    permissions:
+      contents: write
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Create the draft release and attach the builds
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
         run: |
           set -euo pipefail
           tag="${GITHUB_REF_NAME}"
+          mkdir release
+          cp artifacts/*/* release/
+          chmod +x release/Open-Clipboard-Manager-x86_64
+          (cd release && sha256sum * > SHA256SUMS.txt)
           if ! gh release view "$tag" > /dev/null 2>&1; then
             gh release create "$tag" --draft --title "Open Clipboard Manager $tag" \
-              --notes "See the assets below to download this version. Windows only for now; on macOS run from source."
+              --notes "See the assets below to download this version."
           fi
-          gh release upload "$tag" dist/Open-Clipboard-Manager-x64.exe dist/SHA256SUMS.txt --clobber
+          gh release upload "$tag" release/* --clobber

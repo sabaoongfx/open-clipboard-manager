@@ -321,7 +321,9 @@ class MainWindow:
         self.win.deiconify()
         self.win.lift()
         self.win.attributes("-topmost", True)  # forces it in front; dropped again below
-        self.win.after(250, lambda win=self.win: self._drop_topmost(win))
+        # Scheduled on the root, not the window: a callback registered on a window is deleted with it, and Tk
+        # then reports "invalid command name" if the window was rebuilt before the timer fired.
+        self.root.after(250, lambda win=self.win: self._drop_topmost(win))
         self.win.focus_force()
         if self.page in ("history", "images"):
             self.search_var.set("")

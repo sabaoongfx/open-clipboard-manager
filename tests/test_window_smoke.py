@@ -18,6 +18,7 @@ class WindowSmoke(IsolatedDataTestCase):
             self.skipTest(f"no display: {e}")
         self.root.withdraw()
         self.addCleanup(self.root.destroy)
+        self.addCleanup(self.cancel_pending_timers)  # runs first: no timer may outlive the root window
 
         self.platform = mock.Mock()
         self.platform.ui_font = "Segoe UI"
@@ -36,6 +37,10 @@ class WindowSmoke(IsolatedDataTestCase):
         self.app.image_file.side_effect = w.image_path
         self.app.actions = w.Actions()
         self.window = ui.MainWindow(self.root, self.app, self.platform, w.make_icon())
+
+    def cancel_pending_timers(self):
+        for timer in self.root.tk.splitlist(self.root.tk.call("after", "info")):
+            self.root.after_cancel(timer)
 
     def test_every_page_builds_in_both_themes(self):
         for dark in (False, True):
@@ -102,6 +107,9 @@ class WindowSmoke(IsolatedDataTestCase):
     def test_a_theme_change_rebuilds_the_window_without_leaving_errors_behind(self):
         errors = []
         self.root.report_callback_exception = lambda *args: errors.append(args)
+        # Tk reports a timer whose command was deleted ("invalid command name") through bgerror, which
+        # Python never sees, so install a handler that records those as well.
+        self.root.tk.createcommand("bgerror", lambda message: errors.append(message))
         self.window.show()
         self.platform.is_dark_mode.return_value = True
         self.window.show()

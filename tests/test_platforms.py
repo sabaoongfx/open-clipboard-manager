@@ -21,6 +21,8 @@ class BackendContract(unittest.TestCase):
         if sys.platform == "win32":
             import platform_windows
             yield "windows", platform_windows.Platform
+        import platform_linux
+        yield "linux", platform_linux.Platform  # only shells out to helper programs, so it imports anywhere
         yield "macos", import_mac_backend().Platform
 
     def tearDown(self):
@@ -35,14 +37,21 @@ class BackendContract(unittest.TestCase):
 
     def test_every_backend_sets_the_descriptive_attributes(self):
         for name, backend in self.backends():
+            platform = backend()  # some attributes (Linux's hotkey help) depend on the session
             for attribute in REQUIRED_ATTRIBUTES:
                 with self.subTest(backend=name, attribute=attribute):
-                    self.assertTrue(getattr(backend, attribute))
+                    self.assertTrue(getattr(platform, attribute))
 
     def test_every_backend_ships_a_default_hotkey_it_can_parse(self):
         for name, backend in self.backends():
             with self.subTest(backend=name):
                 backend().validate_hotkey(backend.default_hotkey)
+
+    def test_windows_and_linux_default_to_win_v_and_macos_to_ctrl_cmd_v(self):
+        defaults = {name: backend.default_hotkey for name, backend in self.backends()}
+        self.assertEqual(defaults.get("windows", "win+v"), "win+v")
+        self.assertEqual(defaults["linux"], "super+v")
+        self.assertEqual(defaults["macos"], "ctrl+cmd+v")
 
     def test_a_backend_missing_a_method_cannot_be_created(self):
         class Incomplete(PlatformBase):

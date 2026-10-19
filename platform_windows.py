@@ -54,6 +54,35 @@ kernel32.GlobalUnlock.argtypes = [wintypes.HGLOBAL]
 kernel32.GlobalFree.argtypes = [wintypes.HGLOBAL]
 
 
+# Low-level keyboard hook, used for hotkeys that include the Windows key.
+WH_KEYBOARD_LL = 13
+HC_ACTION = 0
+WM_KEYDOWN, WM_SYSKEYDOWN = 0x0100, 0x0104
+KEYEVENTF_KEYUP = 0x2
+VK_SHIFT, VK_CONTROL, VK_MENU, VK_LWIN, VK_RWIN = 0x10, 0x11, 0x12, 0x5B, 0x5C
+VK_UNASSIGNED = 0xE8
+INJECT_MARK = 0x4F434D  # "OCM": tags the keys we inject ourselves so the hook ignores them
+LRESULT = ctypes.c_ssize_t
+HOOKPROC = ctypes.WINFUNCTYPE(LRESULT, ctypes.c_int, wintypes.WPARAM, wintypes.LPARAM)
+
+
+class KBDLLHOOKSTRUCT(ctypes.Structure):
+    _fields_ = [("vkCode", wintypes.DWORD), ("scanCode", wintypes.DWORD), ("flags", wintypes.DWORD),
+                ("time", wintypes.DWORD), ("dwExtraInfo", ctypes.c_size_t)]
+
+
+user32.SetWindowsHookExW.argtypes = [ctypes.c_int, HOOKPROC, wintypes.HINSTANCE, wintypes.DWORD]
+user32.SetWindowsHookExW.restype = wintypes.HHOOK
+user32.UnhookWindowsHookEx.argtypes = [wintypes.HHOOK]
+user32.UnhookWindowsHookEx.restype = wintypes.BOOL
+user32.CallNextHookEx.argtypes = [wintypes.HHOOK, ctypes.c_int, wintypes.WPARAM, wintypes.LPARAM]
+user32.CallNextHookEx.restype = LRESULT
+user32.GetAsyncKeyState.argtypes = [ctypes.c_int]
+user32.GetAsyncKeyState.restype = ctypes.c_short
+kernel32.GetModuleHandleW.argtypes = [wintypes.LPCWSTR]
+kernel32.GetModuleHandleW.restype = wintypes.HMODULE
+
+
 def _open_clipboard():
     for _ in range(10):
         if user32.OpenClipboard(None):
@@ -108,8 +137,8 @@ def _parse_hotkey(spec):
 
 class Platform(PlatformBase):
     name = "windows"
-    default_hotkey = "ctrl+alt+h"
-    hotkey_examples = "e.g. ctrl+alt+h, ctrl+shift+v, alt+f2"
+    default_hotkey = "win+v"
+    hotkey_examples = "e.g. win+v, ctrl+alt+h, ctrl+shift+v"
     default_actions_file = os.path.join(APP_DIR, "actions_windows.json")
     data_dir = os.path.join(os.environ.get("APPDATA", APP_DIR), "winclipman")
     ui_font = "Segoe UI"
@@ -189,6 +218,8 @@ class Platform(PlatformBase):
         user32.keybd_event(VK_CONTROL, 0, KEYUP, 0)
 
     # -- global hotkey ----------------------------------------------------------
+    # Hotkeys without the Windows key use RegisterHotKey. Windows itself owns Win+<key> combinations
+    # (Win+V is its clipboard history), so those use a low-level keyboard hook that swallows the keys.
     def validate_hotkey(self, spec):
         _parse_hotkey(spec)
 
@@ -198,16 +229,71 @@ class Platform(PlatformBase):
         self._tid = None
         self._request = None
         self._active = None
+        self._hook = None
+        self._hook_proc = None
+        self._hook_target = None
+        self._swallowed = False
         self._on_trigger, self._on_error = on_trigger, on_error
         threading.Thread(target=self._hotkey_loop, args=(spec,), daemon=True).start()
 
     def _register(self, spec):
         mods, key = _parse_hotkey(spec)
-        if user32.RegisterHotKey(None, 1, mods, key):
+        self._unregister()
+        if mods & MOD_WIN:
+            ok = self._install_hook(mods, key)
+        else:
+            ok = bool(user32.RegisterHotKey(None, 1, mods, key))
+        if ok:
             self._active = spec
             return True
         self._on_error(f"Could not register hotkey {spec}; it may be in use.")
         return False
+
+    def _unregister(self):
+        user32.UnregisterHotKey(None, 1)
+        if self._hook:
+            user32.UnhookWindowsHookEx(self._hook)
+        self._hook = self._hook_proc = self._hook_target = None
+        self._swallowed = False
+        self._active = None
+
+    def _install_hook(self, mods, key):
+        self._hook_target = (mods & ~MOD_NOREPEAT, key)
+        self._hook_proc = HOOKPROC(self._on_key)  # keep a reference so it is not garbage collected
+        self._hook = user32.SetWindowsHookExW(WH_KEYBOARD_LL, self._hook_proc, kernel32.GetModuleHandleW(None), 0)
+        return bool(self._hook)
+
+    @staticmethod
+    def _held(*vks):
+        return any(user32.GetAsyncKeyState(vk) & 0x8000 for vk in vks)
+
+    def _modifiers_match(self, wanted):
+        return (bool(wanted & MOD_WIN) == self._held(VK_LWIN, VK_RWIN)
+                and bool(wanted & MOD_CONTROL) == self._held(VK_CONTROL)
+                and bool(wanted & MOD_ALT) == self._held(VK_MENU)
+                and bool(wanted & MOD_SHIFT) == self._held(VK_SHIFT))
+
+    def _on_key(self, code, wparam, lparam):
+        """Low-level keyboard hook: swallow the hotkey so the system (and the focused app) never sees it."""
+        if code == HC_ACTION and self._hook_target:
+            info = ctypes.cast(lparam, ctypes.POINTER(KBDLLHOOKSTRUCT)).contents
+            wanted_mods, wanted_key = self._hook_target
+            if info.vkCode == wanted_key and info.dwExtraInfo != INJECT_MARK:
+                if wparam in (WM_KEYDOWN, WM_SYSKEYDOWN):
+                    if self._swallowed:  # auto-repeat while the key is held
+                        return 1
+                    if self._modifiers_match(wanted_mods):
+                        self._swallowed = True
+                        self._on_trigger()
+                        # With the key swallowed, releasing Win alone would open the Start menu; a
+                        # harmless tap of an unassigned key in between prevents that.
+                        user32.keybd_event(VK_UNASSIGNED, 0, 0, INJECT_MARK)
+                        user32.keybd_event(VK_UNASSIGNED, 0, KEYEVENTF_KEYUP, INJECT_MARK)
+                        return 1
+                elif self._swallowed:
+                    self._swallowed = False
+                    return 1
+        return user32.CallNextHookEx(None, code, wparam, lparam)
 
     def _hotkey_loop(self, spec):
         msg = wintypes.MSG()
@@ -219,8 +305,6 @@ class Platform(PlatformBase):
                 self._on_trigger()
             elif msg.message == WM_APP:
                 previous = self._active
-                user32.UnregisterHotKey(None, 1)
-                self._active = None
                 if not self._register(self._request) and previous:
                     self._register(previous)
 

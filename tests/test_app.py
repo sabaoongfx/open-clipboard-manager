@@ -122,6 +122,62 @@ class Events(AppWithoutWindow):
         self.assertIsNone(self.app.prev_window)
 
 
+class HotkeyMigration(AppWithoutWindow):
+    def setUp(self):
+        super().setUp()
+        self.platform.default_hotkey = "win+v"
+
+    def migrate(self, **config):
+        self.app.config = self.config(**config)
+        self.app._migrate_config()
+        return self.app.config
+
+    def test_the_old_default_is_replaced_by_the_new_one_once(self):
+        config = self.migrate(hotkey="ctrl+alt+h")
+        self.assertEqual(config["hotkey"], "win+v")
+        self.assertTrue(config["hotkey_migrated"])
+        self.assertEqual(w.load_json(w.CONFIG_FILE, {})["hotkey"], "win+v")
+
+    def test_a_hotkey_chosen_later_is_left_alone_even_if_it_is_the_old_default(self):
+        config = self.migrate(hotkey="ctrl+alt+h", hotkey_migrated=True)
+        self.assertEqual(config["hotkey"], "ctrl+alt+h")
+
+    def test_a_custom_hotkey_is_never_touched(self):
+        config = self.migrate(hotkey="ctrl+shift+k")
+        self.assertEqual(config["hotkey"], "ctrl+shift+k")
+        self.assertNotIn("hotkey_migrated", config)
+
+    def test_a_fresh_install_already_has_the_new_default_and_needs_no_migration(self):
+        config = self.migrate(hotkey="win+v")
+        self.assertEqual(config["hotkey"], "win+v")
+        self.assertNotIn("hotkey_migrated", config)
+
+
+class StartingTheApp(IsolatedDataTestCase):
+    def test_a_second_launch_only_asks_the_running_copy_to_open_and_exits(self):
+        with mock.patch.object(w.instance, "send", return_value=True) as send, \
+                mock.patch.object(w, "App") as app:
+            w.main([])
+        send.assert_called_once_with(w.DATA_DIR, "show")
+        app.assert_not_called()
+
+    def test_the_settings_flag_asks_for_the_settings_page(self):
+        with mock.patch.object(w.instance, "send", return_value=True) as send:
+            w.main(["--settings"])
+        send.assert_called_once_with(w.DATA_DIR, "settings")
+
+    def test_with_nothing_running_a_new_app_starts_and_creates_its_config(self):
+        with mock.patch.object(w.instance, "send", return_value=False), mock.patch.object(w, "App") as app:
+            w.main([])
+        app.return_value.run.assert_called_once_with(show=False)
+        self.assertTrue(w.load_json(w.CONFIG_FILE, None))
+
+    def test_the_show_flag_opens_the_window_of_a_new_app(self):
+        with mock.patch.object(w.instance, "send", return_value=False), mock.patch.object(w, "App") as app:
+            w.main(["--show"])
+        app.return_value.run.assert_called_once_with(show=True)
+
+
 class StoreImage(IsolatedDataTestCase):
     def test_store_image_does_not_touch_the_history_until_add_item(self):
         h = w.History(self.config())

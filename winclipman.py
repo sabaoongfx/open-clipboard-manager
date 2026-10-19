@@ -21,6 +21,7 @@ from tkinter import messagebox
 import pystray
 from PIL import Image, ImageDraw
 
+import instance
 from platform_base import APP_NAME
 from ui import MainWindow
 
@@ -28,8 +29,10 @@ if sys.platform == "win32":
     from platform_windows import Platform
 elif sys.platform == "darwin":
     from platform_macos import Platform
+elif sys.platform.startswith("linux"):
+    from platform_linux import Platform
 else:
-    raise SystemExit(f"{APP_NAME} supports Windows and macOS only.")
+    raise SystemExit(f"{APP_NAME} supports Windows, macOS and Linux only.")
 
 PLATFORM = Platform()
 APP_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -48,6 +51,7 @@ DEFAULT_CONFIG = {
     "save_history": True,
     "save_images": True,
 }
+OLD_DEFAULT_HOTKEY = "ctrl+alt+h"  # the default before Win+V became the default on every OS
 
 
 class Event(enum.Enum):
@@ -246,6 +250,8 @@ class App:
 
     def __init__(self):
         self.config = {**DEFAULT_CONFIG, **load_json(CONFIG_FILE, {})}
+        self._migrate_config()
+        self.instance_server = None
         self.history = History(self.config)
         self.actions = Actions()
         self.events = queue.Queue()
@@ -271,6 +277,13 @@ class App:
                 pystray.MenuItem("Quit", lambda: self.post(Event.QUIT)),
             ),
         )
+
+    def _migrate_config(self):
+        """Move people who never changed the old default hotkey to the current default, once."""
+        if self.config.get("hotkey") == OLD_DEFAULT_HOTKEY and not self.config.get("hotkey_migrated"):
+            self.config["hotkey"] = PLATFORM.default_hotkey
+            self.config["hotkey_migrated"] = True
+            save_json(CONFIG_FILE, self.config)
 
     # -- background plumbing ------------------------------------------------
     def post(self, event, payload=None):
@@ -438,18 +451,26 @@ class App:
             self.history.save()
         else:
             self.history.clear()  # don't leave image files behind
+        if self.instance_server is not None:
+            self.instance_server.stop()
         try:
             self.tray.stop()
         except Exception:
             pass
         self.root.destroy()
 
-    def run(self):
+    def run(self, show=False):
         try:
             self.start_hotkey_thread()
         except ValueError as e:
             messagebox.showerror(APP_NAME, f"Bad hotkey in config: {e}")
             return
+        # Another launch (or a desktop shortcut bound to `--show`) can now reach this instance.
+        self.instance_server = instance.Server(DATA_DIR, lambda command: self.post(
+            Event.SETTINGS if command == "settings" else Event.SHOW))
+        self.instance_server.start()
+        if show:
+            self.post(Event.SHOW)
         try:
             self.tray.run_detached()
         except Exception as e:  # the hotkey and window still work without a tray icon
@@ -461,7 +482,19 @@ class App:
         self.root.mainloop()
 
 
-if __name__ == "__main__":
+def main(argv):
+    """Start the app, or ask the copy that is already running to open its window.
+
+    --show      open the window (for a desktop shortcut on Wayland, where there is no global hotkey)
+    --settings  open the Settings page
+    """
+    command = "settings" if "--settings" in argv else "show"
+    if instance.send(DATA_DIR, command):
+        return  # the running copy handled it
     if not os.path.exists(CONFIG_FILE):
         save_json(CONFIG_FILE, DEFAULT_CONFIG)
-    App().run()
+    App().run(show="--show" in argv or "--settings" in argv)
+
+
+if __name__ == "__main__":
+    main(sys.argv[1:])

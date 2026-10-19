@@ -75,8 +75,9 @@ def _parse_hotkey(spec):
 
 class Platform(PlatformBase):
     name = "macos"
-    default_hotkey = "ctrl+alt+h"
-    hotkey_examples = "e.g. ctrl+alt+h, cmd+shift+v, option+f2"
+    # The Mac's "Windows key" is Cmd, but Cmd+V is the system Paste shortcut, so the default adds Ctrl.
+    default_hotkey = "ctrl+cmd+v"
+    hotkey_examples = "e.g. ctrl+cmd+v, ctrl+alt+h, cmd+shift+v"
     default_actions_file = os.path.join(APP_DIR, "actions_macos.json")
     data_dir = os.path.expanduser("~/Library/Application Support/winclipman")
     ui_font = ".AppleSystemUIFont"
@@ -142,11 +143,12 @@ class Platform(PlatformBase):
 
     # -- global hotkey ----------------------------------------------------------
     def validate_hotkey(self, spec):
-        _parse_hotkey(spec)
+        if _parse_hotkey(spec) == (MOD_CMD, KEY_CODES["v"]):
+            raise ValueError("Cmd+V is the system Paste shortcut; add another modifier, e.g. ctrl+cmd+v")
 
     def start_hotkey(self, spec, on_trigger, on_error):
         """Register the hotkey; raises ValueError for a bad spec."""
-        _parse_hotkey(spec)
+        self.validate_hotkey(spec)
         self._on_trigger, self._on_error = on_trigger, on_error
         self._ref = None
         self._active = None
