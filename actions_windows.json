@@ -1,0 +1,39 @@
+[
+  {
+    "name": "Image URL",
+    "regex": "(http|ftp).+\\.(jpg|png|gif)",
+    "commands": [
+      {"name": "Open in browser", "exec": "start \"\" \"\\0\""},
+      {"name": "Open in Paint", "exec": "mspaint \"\\0\""}
+    ]
+  },
+  {
+    "name": "Bug number",
+    "regex": "bug\\s*#?\\s*([0-9]+)",
+    "commands": [
+      {"name": "Xfce Bugzilla", "exec": "start \"\" \"https://bugzilla.xfce.org/show_bug.cgi?id=\\1\""},
+      {"name": "GNOME Bugzilla", "exec": "start \"\" \"https://bugzilla.gnome.org/show_bug.cgi?id=\\1\""}
+    ]
+  },
+  {
+    "name": "URL",
+    "regex": "https?://\\S+",
+    "commands": [
+      {"name": "Open in browser", "exec": "start \"\" \"\\0\""}
+    ]
+  },
+  {
+    "name": "Long URL",
+    "regex": "https?://[^\\s]{120,}",
+    "commands": [
+      {"name": "Shrink the URL", "exec": "start \"\" \"https://tinyurl.com/create.php?url=\\0\""}
+    ]
+  },
+  {
+    "name": "File path",
+    "regex": "^[A-Za-z]:\\\\[^<>:\"|?*]+$",
+    "commands": [
+      {"name": "Show in Explorer", "exec": "explorer /select,\"\\0\""}
+    ]
+  }
+]
