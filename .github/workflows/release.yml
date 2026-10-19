@@ -156,7 +156,7 @@ jobs:
           name: Open-Clipboard-Manager-x86_64
           path: dist/Open-Clipboard-Manager-x86_64
 
-  # Two builds: Apple Silicon (arm64) and Intel (x64). Each runs on a machine of its own architecture.
+  # Two builds: Apple Silicon (aarch64) and Intel (x64). Each runs on a machine of its own architecture.
   macos:
     needs: test
     permissions:
@@ -166,9 +166,9 @@ jobs:
       matrix:
         include:
           - runner: macos-latest
-            arch: arm64
+            dmg: aarch64
           - runner: macos-15-intel
-            arch: x64
+            dmg: x64
     runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v4
@@ -180,10 +180,15 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt pyinstaller
 
+      - name: Make the app icon
+        run: python tools/make_assets.py
+
       - name: Build the app
         run: >
           pyinstaller --noconfirm --clean --windowed
-          --name Open-Clipboard-Manager
+          --name "Open Clipboard Manager"
+          --icon assets/icon.icns
+          --osx-bundle-identifier io.github.sabaoongfx.openclipboardmanager
           --add-data "actions_windows.json:."
           --add-data "actions_macos.json:."
           --add-data "actions_linux.json:."
@@ -193,16 +198,31 @@ jobs:
           winclipman.py
 
       - name: Smoke test the build
-        run: python tools/smoke_test.py dist/Open-Clipboard-Manager.app/Contents/MacOS/Open-Clipboard-Manager 15
+        run: python tools/smoke_test.py "dist/Open Clipboard Manager.app/Contents/MacOS/Open Clipboard Manager" 15
 
-      - name: Zip the app
-        run: ditto -c -k --keepParent dist/Open-Clipboard-Manager.app Open-Clipboard-Manager-macos-${{ matrix.arch }}.zip
+      # The disk image holds the app and a shortcut to /Applications, so installing is drag-and-drop.
+      - name: Build the disk image
+        run: |
+          stage="$(mktemp -d)"
+          cp -R "dist/Open Clipboard Manager.app" "$stage/"
+          ln -s /Applications "$stage/Applications"
+          hdiutil create -volname "Open Clipboard Manager" -srcfolder "$stage" -ov -format UDZO "Open-Clipboard-Manager-${{ matrix.dmg }}.dmg"
+          ls -l Open-Clipboard-Manager-*.dmg
+
+      - name: Test the disk image (mount it, check the layout, run the app from it)
+        run: |
+          mnt="$(mktemp -d)"
+          hdiutil attach "Open-Clipboard-Manager-${{ matrix.dmg }}.dmg" -mountpoint "$mnt" -nobrowse -quiet
+          test -d "$mnt/Open Clipboard Manager.app"
+          test -L "$mnt/Applications"
+          python tools/smoke_test.py "$mnt/Open Clipboard Manager.app/Contents/MacOS/Open Clipboard Manager" 15
+          hdiutil detach "$mnt" -quiet
+          echo "disk image: mounted, laid out and ran correctly"
 
       - uses: actions/upload-artifact@v4
         with:
-          name: Open-Clipboard-Manager-macos-${{ matrix.arch }}
-          path: Open-Clipboard-Manager-macos-${{ matrix.arch }}.zip
-
+          name: Open-Clipboard-Manager-${{ matrix.dmg }}-dmg
+          path: Open-Clipboard-Manager-${{ matrix.dmg }}.dmg
   # One job creates the draft and attaches everything, so the build jobs never race to create it.
   publish:
     needs: [windows, linux, macos]

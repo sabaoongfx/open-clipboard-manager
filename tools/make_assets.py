@@ -1,4 +1,4 @@
-"""Regenerates the app icon files in assets/ and the logo in public/ from winclipman.make_icon().
+"""Regenerates the app icon files in assets/ (png, ico, icns) and the logo in public/ from winclipman.make_icon().
 
     python tools/make_assets.py
 """
@@ -8,6 +8,7 @@ import sys
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
 
+from PIL import Image  # noqa: E402
 from winclipman import make_icon  # noqa: E402
 
 LOGO_SVG = """<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">
@@ -26,9 +27,10 @@ def main():
     icon = make_icon()
     icon.save(os.path.join(ROOT, "assets", "icon.png"))
     icon.save(os.path.join(ROOT, "assets", "icon.ico"), sizes=[(16, 16), (32, 32), (48, 48), (64, 64), (128, 128)])
+    icon.resize((512, 512), Image.LANCZOS).save(os.path.join(ROOT, "assets", "icon.icns"))  # macOS app icon
     with open(os.path.join(ROOT, "public", "open-clipboard-manager.svg"), "w", encoding="utf-8") as f:
         f.write(LOGO_SVG)
-    print("wrote assets/icon.png, assets/icon.ico, public/open-clipboard-manager.svg")
+    print("wrote assets/icon.png, assets/icon.ico, assets/icon.icns, public/open-clipboard-manager.svg")
 
 
 if __name__ == "__main__":
