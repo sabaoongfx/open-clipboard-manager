@@ -88,6 +88,62 @@ class ImageCapture(AppWithoutWindow):
         self.assertEqual(self.app.history.items, [])
 
 
+class CopyButton(AppWithoutWindow):
+    def test_copying_puts_the_entry_on_the_clipboard_without_pasting_or_closing_the_window(self):
+        self.platform.set_text.return_value = True
+        self.platform.clipboard_token.return_value = 11
+        self.app.history.add_text("keep me")
+        item = self.app.history.items[0]
+        self.assertTrue(self.app.copy_item(item))
+        self.platform.set_text.assert_called_once_with("keep me")
+        self.app.window.hide.assert_not_called()
+        self.platform.send_paste.assert_not_called()
+        self.platform.focus.assert_not_called()
+
+    def test_our_own_copy_is_not_recorded_again_as_a_new_clipboard_change(self):
+        self.platform.set_text.return_value = True
+        self.platform.clipboard_token.return_value = 42
+        self.app.history.add_text("x")
+        self.app.copy_item(self.app.history.items[0])
+        self.assertEqual(self.app.last_seq, 42)
+
+    def test_copying_does_not_reorder_the_history_under_the_users_mouse(self):
+        self.platform.set_text.return_value = True
+        for text in ("a", "b", "c"):
+            self.app.history.add_text(text)
+        self.app.copy_item(self.app.history.items[2])
+        self.assertEqual([i["text"] for i in self.app.history.items], ["c", "b", "a"])
+        self.app.window.refresh.assert_not_called()
+
+    def test_a_failed_copy_reports_false_and_leaves_the_sequence_alone(self):
+        self.platform.set_text.return_value = False
+        self.app.last_seq = 5
+        self.app.history.add_text("x")
+        self.assertFalse(self.app.copy_item(self.app.history.items[0]))
+        self.assertEqual(self.app.last_seq, 5)
+
+    def test_images_are_copied_too(self):
+        self.platform.set_image.return_value = True
+        item = self.app.history.store_image(Image.new("RGB", (3, 3), "red"))
+        self.assertTrue(self.app.copy_item(item))
+        self.platform.set_image.assert_called_once()
+
+    def test_a_missing_image_file_cannot_be_copied(self):
+        self.assertFalse(self.app.copy_item({"type": "image", "file": "gone.png", "w": 1, "h": 1}))
+
+    def test_using_an_entry_still_hides_the_window_bumps_it_and_pastes(self):
+        self.platform.set_text.return_value = True
+        self.app.config = self.config(paste_on_select=True)
+        self.app.prev_window = "notepad"
+        for text in ("a", "b"):
+            self.app.history.add_text(text)
+        self.app.use_item(self.app.history.items[1])
+        self.app.window.hide.assert_called_once()
+        self.assertEqual(self.app.history.items[0]["text"], "a")
+        self.platform.focus.assert_called_once_with("notepad")
+        self.app.root.after.assert_called_once_with(120, self.platform.send_paste)
+
+
 class Events(AppWithoutWindow):
     def test_events_are_delivered_in_order_with_their_payload(self):
         self.app.post(w.Event.ERROR, "boom")

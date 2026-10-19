@@ -378,9 +378,8 @@ class App:
     def image_file(self, item):
         return image_path(item)
 
-    def use_item(self, item):
-        """Put an entry back on the clipboard and paste it into the window we came from."""
-        self.window.hide()
+    def _put_on_clipboard(self, item):
+        """Make an entry the clipboard's content; returns whether that worked."""
         if item["type"] == "text":
             ok = PLATFORM.set_text(item["text"])
         else:
@@ -389,9 +388,19 @@ class App:
                     ok = PLATFORM.set_image(img)
             except (OSError, ValueError):
                 ok = False
-        if not ok:
+        if ok:
+            self.last_seq = PLATFORM.clipboard_token()  # our own write must not be recorded as a new copy
+        return ok
+
+    def copy_item(self, item):
+        """The Copy button: put an entry on the clipboard, without pasting it or closing the window."""
+        return self._put_on_clipboard(item)
+
+    def use_item(self, item):
+        """Put an entry back on the clipboard and paste it into the window we came from."""
+        self.window.hide()
+        if not self._put_on_clipboard(item):
             return
-        self.last_seq = PLATFORM.clipboard_token()
         self.history.bump(item)
         self.window.refresh()
         target, self.prev_window = self.prev_window, None

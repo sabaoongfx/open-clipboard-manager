@@ -38,7 +38,11 @@ There is no linter configured. The tests are the gate.
   given (`app.history`, `app.use_item`, `app.save_settings`, ...). Colours mirror Open Task Manager's CSS
   variables (`LIGHT`/`DARK`). Rounded shapes are PIL-drawn images on Canvases, because Tk can't round
   corners; the card's corners are small images laid over square content. Icons are drawn by the small
-  functions in `ICON_DRAWERS`.
+  functions in `ICON_DRAWERS`. The History table is a ttk Treeview, which can't hold widgets, so the per-row copy
+  and trash icons are `RowActions` frames laid over each visible row's last cell (`_layout_row_buttons`, a
+  reused pool, re-placed after refresh, scroll, resize and selection changes). The scrollbar is grid-managed and
+  hidden by `_on_yscroll` while every row fits. `App.copy_item` (Copy button) differs from `App.use_item`
+  (Enter / double-click): it neither hides the window, pastes, nor reorders the history.
 - `platform_base.py`: `APP_NAME`, `APP_VERSION`, `ENTRY_SCRIPT` and the abstract `PlatformBase` every
   backend implements. A backend missing a method fails when it is created.
   - `platform_windows.py`: ctypes/Win32 (clipboard, `RegisterHotKey`, keyboard hook, registry autostart).

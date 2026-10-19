@@ -1,4 +1,11 @@
-# Changelog
+﻿# Changelog
+
+## Unreleased
+
+- **Copy button** in the History toolbar, plus a copy icon on every row: puts the entry on the clipboard without pasting it or closing the window.
+- **Trash icon on every row** to remove just that entry.
+- The list's scrollbar now shows only when there are more rows than fit.
+- The History toolbar is a little more compact (narrower search box) to make room for the Copy button; the window opens at 1000 px wide.
 
 ## 0.2.0
 

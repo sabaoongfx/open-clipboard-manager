@@ -100,6 +100,12 @@ def _edit(d, c):
     d.polygon([(12, 86), (18, 64), (34, 80)], fill=c)
 
 
+def _copy(d, c):
+    d.rounded_rectangle((32, 32, 86, 88), 9, outline=c, width=STROKE)
+    d.line([(24, 64), (18, 64), (10, 56), (10, 18), (18, 10), (54, 10), (62, 18), (62, 24)],
+           fill=c, width=STROKE, joint="curve")
+
+
 def _reload(d, c):
     d.arc((14, 14, 82, 82), 40, 320, fill=c, width=STROKE)
     d.polygon([(66, 4), (90, 30), (56, 36)], fill=c)
@@ -108,7 +114,7 @@ def _reload(d, c):
 ICON_DRAWERS = {
     "menu": _menu, "history": _history, "image": _image, "text": _text, "actions": _actions,
     "settings": _settings, "search": _search, "pause": _pause, "play": _play, "trash": _trash,
-    "clear": _clear, "edit": _edit, "reload": _reload,
+    "clear": _clear, "edit": _edit, "reload": _reload, "copy": _copy,
 }
 
 
@@ -270,6 +276,38 @@ class NavItem(tk.Canvas):
             self.create_text(44, h // 2, anchor="w", text=self.text, fill=t["text"], font=self.font)
 
 
+class RowActions(tk.Frame):
+    """Copy and delete icons laid over the last cell of one table row (a ttk table can't hold widgets)."""
+
+    def __init__(self, tree, theme, on_copy, on_delete, on_wheel):
+        super().__init__(tree, bg=theme["elevated"], bd=0, highlightthickness=0)
+        self.t, self.iid = theme, None
+        self.copy = tk.Label(self, bd=0, cursor="hand2", image=icon("copy", theme["muted"], 16))
+        self.trash = tk.Label(self, bd=0, cursor="hand2", image=icon("trash", theme["muted"], 16))
+        self.copy.place(x=20, rely=0.5, anchor="center")
+        self.trash.place(x=50, rely=0.5, anchor="center")
+        for label, name, hover, command in ((self.copy, "copy", theme["accent"], on_copy),
+                                            (self.trash, "trash", theme["danger"], on_delete)):
+            label.bind("<Button-1>", lambda _e, cmd=command: cmd(self.iid))
+            label.bind("<Enter>", lambda _e, lb=label, n=name, c=hover: lb.config(image=icon(n, c, 16)))
+            label.bind("<Leave>", lambda _e, lb=label, n=name: lb.config(image=icon(n, theme["muted"], 16)))
+        for widget in (self, self.copy, self.trash):  # the table would scroll under the mouse; keep that working
+            widget.bind("<MouseWheel>", on_wheel)
+            widget.bind("<Button-4>", on_wheel)
+            widget.bind("<Button-5>", on_wheel)
+
+    def show(self, iid, x, y, w, h, selected):
+        self.iid = iid
+        bg = self.t["selected"] if selected else self.t["elevated"]
+        for widget in (self, self.copy, self.trash):
+            widget.config(bg=bg)
+        self.place(x=x, y=y, width=w, height=h)
+
+    def hide(self):
+        self.iid = None
+        self.place_forget()
+
+
 class RoundedField(tk.Canvas):
     """A rounded, bordered input box around another widget; the border turns accent-coloured on focus."""
 
@@ -307,6 +345,10 @@ class MainWindow:
         self.visible = []
         self._thumbs = {}
         self._photo = None
+        self.row_buttons = []         # pool of RowActions, one per visible table row
+        self._layout_pending = False
+        self._scroll_shown = False
+        self._flash_token = None
 
     # -- public API -------------------------------------------------------------
     def show(self, page=None):
@@ -366,10 +408,11 @@ class MainWindow:
                 img, kind, size = icon("text", muted, 18), "Text", f"{len(item['text'])} chars"
                 label = " ".join(item["text"].split())[: self.app.config["preview_chars"]]
             self.tree.insert("", "end", iid=str(i), text="  " + label, image=img,
-                             values=(kind, size, when(item.get("time"))))
+                             values=(kind, size, when(item.get("time")), ""))
         if self.visible:
             self.tree.selection_set("0")
         self._on_select()
+        self._schedule_row_buttons()
 
     def update_pause(self):
         if self.win is not None:
@@ -410,8 +453,8 @@ class MainWindow:
         self._window_icon = ImageTk.PhotoImage(self.app_icon)  # replaces Tk's default feather icon
         win.iconphoto(False, self._window_icon)
         win.configure(bg=t["bg"])
-        win.geometry("980x660")
-        win.minsize(760, 500)
+        win.geometry("1000x660")
+        win.minsize(900, 500)  # the History toolbar needs this much room
         win.protocol("WM_DELETE_WINDOW", self.hide)
         win.bind("<Escape>", lambda _: self.hide())
         win.columnconfigure(1, weight=1)
@@ -492,9 +535,11 @@ class MainWindow:
         self.remove_btn.pack(side="right", padx=2)
         self.pause_btn = ToolButton(bar, t, f, "Pause", "pause", self.app.toggle_pause)
         self.pause_btn.pack(side="right", padx=2)
+        self.copy_btn = ToolButton(bar, t, f, "Copy", "copy", self._copy_selected)
+        self.copy_btn.pack(side="right", padx=2)
         self.search_var = tk.StringVar()
         self.search_var.trace_add("write", lambda *_: self.refresh())
-        box = self._field(bar, t["header"], 240, lambda p: self._entry(p, textvariable=self.search_var),
+        box = self._field(bar, t["header"], 165, lambda p: self._entry(p, textvariable=self.search_var),
                           icon_name="search")
         box.pack(side="right", padx=(0, 10))
         self.search_entry = box.inner
@@ -516,16 +561,22 @@ class MainWindow:
 
         wrap = tk.Frame(page, bg=t["elevated"])
         wrap.pack(fill="both", expand=True, padx=(12, 4), pady=(4, 0))
-        sb = ttk.Scrollbar(wrap, style="Clip.Vertical.TScrollbar", orient="vertical")
-        sb.pack(side="right", fill="y", padx=(0, 4), pady=4)
-        self.tree = ttk.Treeview(wrap, style="Clip.Treeview", columns=("kind", "size", "when"),
-                                 show="tree headings", selectmode="browse", yscrollcommand=sb.set)
-        sb.config(command=self.tree.yview)
+        wrap.columnconfigure(0, weight=1)
+        wrap.rowconfigure(0, weight=1)
+        self.tree_scroll = ttk.Scrollbar(wrap, style="Clip.Vertical.TScrollbar", orient="vertical")
+        self.tree = ttk.Treeview(wrap, style="Clip.Treeview", columns=("kind", "size", "when", "actions"),
+                                 show="tree headings", selectmode="browse", yscrollcommand=self._on_yscroll)
+        self.tree_scroll.config(command=self.tree.yview)
         for col, text, width in (("#0", "Content", 240), ("kind", "Type", 70), ("size", "Size", 90),
-                                 ("when", "Copied", 90)):
+                                 ("when", "Copied", 90), ("actions", "", 72)):
             self.tree.heading(col, text=text, anchor="w")
-            self.tree.column(col, width=width, anchor="w", stretch=(col == "#0"), minwidth=60)
-        self.tree.pack(side="left", fill="both", expand=True)
+            self.tree.column(col, width=width, anchor="w", stretch=(col == "#0"),
+                             minwidth=72 if col == "actions" else 60)
+        self.tree.grid(row=0, column=0, sticky="nsew")
+        self.tree_scroll.grid(row=0, column=1, sticky="ns", padx=(0, 4), pady=4)
+        self.tree_scroll.grid_remove()  # only shown when the list is longer than the view
+        self._scroll_shown = False
+        self.tree.bind("<Configure>", lambda _: self._schedule_row_buttons())
         self.tree.bind("<<TreeviewSelect>>", lambda _: self._on_select())
         self.tree.bind("<Double-Button-1>", lambda _: self._use_selected())
         self.tree.bind("<Return>", lambda _: self._use_selected())
@@ -651,9 +702,87 @@ class MainWindow:
         sel = self.tree.selection()
         return self.visible[int(sel[0])] if sel else None
 
+    def _on_yscroll(self, first, last):
+        """Scrollbar callback: show the bar only when some rows are out of view, and keep the icons in place."""
+        self.tree_scroll.set(first, last)
+        needed = float(first) > 0.0 or float(last) < 1.0
+        if needed != self._scroll_shown:
+            self._scroll_shown = needed
+            if needed:
+                self.tree_scroll.grid()
+            else:
+                self.tree_scroll.grid_remove()
+        self._schedule_row_buttons()
+
+    def _schedule_row_buttons(self):
+        if not self._layout_pending:
+            self._layout_pending = True
+            self.root.after_idle(self._layout_row_buttons)  # on the root: the window may be rebuilt meanwhile
+
+    def _layout_row_buttons(self):
+        """Lay a copy/delete icon pair over the last cell of every row that is currently in view."""
+        self._layout_pending = False
+        try:
+            if self.win is None or self.page not in ("history", "images"):
+                return
+            selected = self.tree.selection()
+            used = 0
+            for iid in self.tree.get_children():
+                box = self.tree.bbox(iid, "actions")
+                if not box:  # scrolled out of view
+                    continue
+                if used == len(self.row_buttons):
+                    self.row_buttons.append(RowActions(self.tree, self.t, self._copy_row, self._delete_row,
+                                                       self._wheel))
+                self.row_buttons[used].show(iid, *box, selected=iid in selected)
+                used += 1
+            for spare in self.row_buttons[used:]:
+                spare.hide()
+        except tk.TclError:  # the window was closed or rebuilt while this was queued
+            pass
+
+    def _wheel(self, event):
+        up = event.num == 4 or getattr(event, "delta", 0) > 0
+        self.tree.yview_scroll(-1 if up else 1, "units")
+
+    def _copy_row(self, iid):
+        if iid is not None:
+            self._copy(self.visible[int(iid)])
+
+    def _delete_row(self, iid):
+        if iid is not None:
+            self.app.remove_item(self.visible[int(iid)])
+
+    def _copy_selected(self):
+        item = self.selected_item()
+        if item is not None:
+            self._copy(item)
+
+    def _copy(self, item):
+        if self.app.copy_item(item):
+            self._flash("Copied to clipboard", self.t["accent"])
+        else:
+            self._flash("Could not copy this item", self.t["danger"])
+
+    def _flash(self, text, colour):
+        """Show a short confirmation where the selected entry's caption normally is."""
+        self.preview_caption.config(text=text, fg=colour)
+        token = self._flash_token = object()
+        self.root.after(1600, lambda: self._end_flash(token))
+
+    def _end_flash(self, token):
+        try:
+            if self.win is not None and token is self._flash_token:
+                self._on_select()
+        except tk.TclError:
+            pass
+
     def _on_select(self):
         item = self.selected_item()
         self.remove_btn.configure_button(enabled=item is not None)
+        self.copy_btn.configure_button(enabled=item is not None)
+        self.preview_caption.config(fg=self.t["muted"])
+        self._schedule_row_buttons()  # the selected row has a different background
         self.preview_label.config(image="", text="")
         self._photo = None
         if item is None:
@@ -708,6 +837,7 @@ class MainWindow:
         menu = tk.Menu(self.win, tearoff=0, bg=t["elevated"], fg=t["text"], activebackground=t["selected"],
                        activeforeground=t["text"], bd=0, font=(self.font, 10))
         menu.add_command(label="Use this item", command=self._use_selected)
+        menu.add_command(label="Copy", command=self._copy_selected)
         menu.add_separator()
         if item["type"] == "image":
             menu.add_command(label="Open image", command=lambda: self.platform.open_path(self.app.image_file(item)))

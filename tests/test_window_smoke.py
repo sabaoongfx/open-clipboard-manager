@@ -90,6 +90,124 @@ class WindowSmoke(IsolatedDataTestCase):
         self.window.search_var.set("zzz")
         self.assertFalse(self.window.remove_btn.enabled)
 
+    def settle(self):
+        """Let Tk lay the window out and run queued idle work (the row icons are placed after layout)."""
+        for _ in range(30):
+            self.root.update_idletasks()
+            self.root.update()
+            if not self.window._layout_pending:
+                break
+        self.root.update_idletasks()
+        self.root.update()
+
+    def shown_row_buttons(self):
+        return [b for b in self.window.row_buttons if b.winfo_manager()]
+
+    def test_the_toolbar_has_a_labelled_copy_button_that_copies_the_selected_entry(self):
+        self.window.show("history")
+        self.settle()
+        self.assertEqual(self.window.copy_btn.text, "Copy")
+        self.assertTrue(self.window.copy_btn.enabled)
+        self.app.copy_item.return_value = True
+        self.window.tree.selection_set("1")
+        self.window._copy_selected()
+        self.app.copy_item.assert_called_once_with(self.window.visible[1])
+        self.assertEqual(self.window.preview_caption.cget("text"), "Copied to clipboard")
+
+    def test_a_failed_copy_says_so(self):
+        self.window.show("history")
+        self.app.copy_item.return_value = False
+        self.window._copy_selected()
+        self.assertEqual(self.window.preview_caption.cget("text"), "Could not copy this item")
+        self.assertEqual(self.window.preview_caption.cget("fg"), self.window.t["danger"])
+
+    def test_the_confirmation_goes_away_and_the_caption_comes_back(self):
+        self.window.show("history")
+        self.app.copy_item.return_value = True
+        self.window._copy_selected()
+        token = self.window._flash_token
+        self.window._end_flash(token)
+        self.assertIn("characters", self.window.preview_caption.cget("text").lower() + " characters")
+        self.assertEqual(self.window.preview_caption.cget("fg"), self.window.t["muted"])
+        self.window._end_flash(object())  # a stale timer from an earlier copy must not clobber a newer message
+        self.assertEqual(self.window.preview_caption.cget("fg"), self.window.t["muted"])
+
+    def test_copy_is_disabled_when_nothing_is_selected(self):
+        self.window.show("history")
+        self.window.search_var.set("zzz")
+        self.assertFalse(self.window.copy_btn.enabled)
+
+    def test_every_visible_row_gets_a_copy_and_a_trash_icon_over_its_last_cell(self):
+        self.window.show("history")
+        self.settle()
+        buttons = self.shown_row_buttons()
+        self.assertEqual(len(buttons), 3)
+        self.assertEqual(sorted(b.iid for b in buttons), ["0", "1", "2"])
+        for button in buttons:
+            box = self.window.tree.bbox(button.iid, "actions")
+            self.assertEqual((button.winfo_x(), button.winfo_y()), (box[0], box[1]))
+
+    def test_clicking_a_rows_trash_icon_removes_that_row(self):
+        self.window.show("history")
+        self.settle()
+        button = next(b for b in self.shown_row_buttons() if b.iid == "1")
+        button.trash.event_generate("<Button-1>", x=1, y=1)
+        self.app.remove_item.assert_called_once_with(self.window.visible[1])
+
+    def test_clicking_a_rows_copy_icon_copies_that_row(self):
+        self.window.show("history")
+        self.settle()
+        self.app.copy_item.return_value = True
+        button = next(b for b in self.shown_row_buttons() if b.iid == "2")
+        button.copy.event_generate("<Button-1>", x=1, y=1)
+        self.app.copy_item.assert_called_once_with(self.window.visible[2])
+
+    def test_the_icons_follow_the_list_when_it_is_filtered(self):
+        self.window.show("history")
+        self.settle()
+        self.window.search_var.set("bug")
+        self.settle()
+        self.assertEqual([b.iid for b in self.shown_row_buttons()], ["0"])
+        self.window.search_var.set("zzz")
+        self.settle()
+        self.assertEqual(self.shown_row_buttons(), [])
+
+    def test_there_is_no_scrollbar_while_all_rows_fit(self):
+        self.window.show("history")
+        self.settle()
+        self.assertFalse(self.window.tree_scroll.winfo_ismapped())
+
+    def test_the_scrollbar_appears_only_when_the_list_is_longer_than_the_view(self):
+        for n in range(60):
+            self.app.history.add_text(f"entry {n}")
+        self.window.show("history")
+        self.settle()
+        self.assertTrue(self.window.tree_scroll.winfo_ismapped())
+        self.window.search_var.set("entry 55")  # one match fits again
+        self.settle()
+        self.assertFalse(self.window.tree_scroll.winfo_ismapped())
+
+    def test_icons_exist_only_for_rows_in_view_and_are_reused(self):
+        for n in range(60):
+            self.app.history.add_text(f"entry {n}")
+        self.window.show("history")
+        self.settle()
+        in_view = len(self.shown_row_buttons())
+        self.assertTrue(0 < in_view < 60)
+        self.assertEqual(len(self.window.row_buttons), in_view)
+        self.window.tree.yview_moveto(0.5)
+        self.settle()
+        self.assertEqual(len(self.window.row_buttons), in_view, "the pool is reused, not grown")
+        self.assertTrue(all(b.iid for b in self.shown_row_buttons()))
+
+    def test_the_selected_rows_icons_share_its_background(self):
+        self.window.show("history")
+        self.settle()
+        selected = next(b for b in self.shown_row_buttons() if b.iid == self.window.tree.selection()[0])
+        other = next(b for b in self.shown_row_buttons() if b.iid != self.window.tree.selection()[0])
+        self.assertEqual(selected.cget("bg"), self.window.t["selected"])
+        self.assertEqual(other.cget("bg"), self.window.t["elevated"])
+
     def test_the_pause_button_follows_the_app_state(self):
         self.window.show("history")
         self.assertEqual(self.window.pause_btn.text, "Pause")

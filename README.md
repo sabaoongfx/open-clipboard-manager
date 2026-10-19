@@ -109,7 +109,11 @@ running instead of starting a second one.
 - **Search as you type**: the box is focused when the window opens. Type `image` to find pictures.
 - **Pick and paste**: Enter or double-click copies the entry back and pastes it into the window you
   came from (when opened with the hotkey). Opened from the tray, it only copies.
-- **Remove, clear, pause**: toolbar buttons; `Delete` removes the selected entry.
+- **Copy button**: the toolbar's **Copy** button, and a copy icon on every row, put an entry back on the clipboard
+  without pasting it or closing the window (a short *Copied to clipboard* confirms it).
+- **Trash icon on every row**: removes just that entry. The toolbar also has **Remove**, **Clear all** and **Pause**,
+  and `Delete` removes the selected entry.
+- **Scrollbar only when needed**: the list shows one only when there are more rows than fit.
 - **Preview pane**: the full text, or a larger picture, of the selected entry.
 - **Images tab**: the same list, pictures only.
 
