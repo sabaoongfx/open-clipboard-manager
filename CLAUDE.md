@@ -2,86 +2,128 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+Open Clipboard Manager: a clipboard history manager (text + images) for Windows, Linux and macOS, written
+in Python/Tk, with a window styled after Open Task Manager. Public repo:
+`sabaoongfx/open-clipboard-manager`. The module is still called `winclipman` (see Conventions).
+
 ## Commands
 
 ```bash
-pip install -r requirements.txt          # pystray, pillow (+ PyObjC on macOS)
-python winclipman.py                     # run the app (pythonw on Windows hides the console)
-python -m unittest discover -s tests -v  # the whole suite (~7s)
-python -m unittest tests.test_history    # one file
-python tools/make_assets.py              # regenerate assets/icon.* and public/*.svg
+pip install -r requirements.txt                             # pystray, pillow (+ PyObjC on macOS, python-xlib on Linux)
+python winclipman.py                                        # run the app (pythonw on Windows hides the console)
+python winclipman.py --show                                 # open the window of the running copy (or start one and show)
+python -m unittest discover -s tests -v                     # the whole suite (~9 s, 158 tests on Windows)
+python -m unittest discover -s tests -p test_history.py     # one file (tests import `base` from tests/, so use discover)
+python tools/make_assets.py                                 # regenerate assets/icon.* and public/*.svg
+python tools/smoke_test.py <built exe> 15                   # start a built binary, check a second launch hands over
+```
+
+Windows build (what CI does; the `--add-data` separator is `;` on Windows and `:` elsewhere):
+
+```bash
+pyinstaller --noconfirm --clean --onefile --windowed --name Open-Clipboard-Manager-x64 --icon assets/icon.ico \
+  --add-data "actions_windows.json;." --add-data "actions_macos.json;." --add-data "actions_linux.json;." \
+  --hidden-import pystray._win32 winclipman.py
 ```
 
 There is no linter configured. The tests are the gate.
 
 ## Architecture
 
-- `winclipman.py`: everything that isn't drawing. `History` (entries are dicts, images are PNG files named
-  by a hash), `Actions` (regex -> shell command templates), `App` (events, clipboard polling, settings,
-  paste, tray). Module-level `PLATFORM` is the OS backend.
+- `winclipman.py`: everything that isn't drawing. `History` (entries are dicts; images are PNG files named by
+  a hash of their pixels), `Actions` (regex -> shell command templates), `App` (events, clipboard polling,
+  settings, paste, tray, hotkey migration), `Event` (the message enum), `main(argv)` (command line +
+  single-instance hand-over). Module-level `PLATFORM` is the OS backend.
 - `ui.py`: `MainWindow` and its widgets. It never imports `winclipman`; it talks to the app object it is
   given (`app.history`, `app.use_item`, `app.save_settings`, ...). Colours mirror Open Task Manager's CSS
   variables (`LIGHT`/`DARK`). Rounded shapes are PIL-drawn images on Canvases, because Tk can't round
-  corners; the card's corners are small images laid over square content.
-- `platform_base.py`: `APP_NAME`, `APP_VERSION` and the abstract `PlatformBase` every backend implements.
-  A backend missing a method fails when it is created. `platform_windows.py` (ctypes/Win32),
-  `platform_linux.py` (xclip/wl-clipboard/xdotool + python-xlib) and `platform_macos.py` (PyObjC + Carbon)
-  implement it.
-
-- `instance.py`: a loopback port in the data folder. `main()` asks a running copy to open its window and
-  exits; `--show` / `--settings` use it too (the only way to open the window on Wayland, which has no global
-  hotkeys).
+  corners; the card's corners are small images laid over square content. Icons are drawn by the small
+  functions in `ICON_DRAWERS`.
+- `platform_base.py`: `APP_NAME`, `APP_VERSION`, `ENTRY_SCRIPT` and the abstract `PlatformBase` every
+  backend implements. A backend missing a method fails when it is created.
+  - `platform_windows.py`: ctypes/Win32 (clipboard, `RegisterHotKey`, keyboard hook, registry autostart).
+  - `platform_linux.py`: `xclip` or `wl-clipboard`, `xdotool`/`wtype`/`ydotool`, python-xlib for the X11
+    hotkey, an XDG autostart entry. Linux has no clipboard change counter, so `clipboard_token()` reads the
+    clipboard and hashes it (and caches that read for `get_text`/`get_image`).
+  - `platform_macos.py`: PyObjC `NSPasteboard`, Carbon `RegisterEventHotKey` through ctypes, osascript paste,
+    a LaunchAgent.
+- `instance.py`: a loopback port written to `<data dir>/instance.port`. `main()` asks a running copy to open
+  its window and exits; `--show` / `--settings` use it too, which is the only way to open the window on
+  Wayland (no global hotkeys there). Only the commands in `instance.COMMANDS` are accepted.
+- `actions_<os>.json`: default actions per OS. The user's copy lives in the data folder as `actions.json`.
+- Data folder (`PLATFORM.data_dir`): `%APPDATA%\winclipman`, `~/Library/Application Support/winclipman`,
+  `$XDG_DATA_HOME` or `~/.local/share` + `/winclipman`. Holds `config.json`, `history.json`, `images/`,
+  `actions.json`, `instance.port`.
 
 ### Hotkeys
 
 - Default is Win+V everywhere: `win+v` (Windows), `super+v` (Linux/X11), `ctrl+cmd+v` (macOS; plain Cmd+V
-  is refused because it is Paste). Windows owns Win+<key>, so those combinations use a low-level keyboard
-  hook (`_on_key`) that swallows the key and injects a tap of VK 0xE8 so releasing Win doesn't open the
-  Start menu. Keys we inject carry `INJECT_MARK` so the hook ignores them.
+  is refused because it is the system Paste shortcut).
+- Windows owns Win+<key>, so those combinations use a low-level keyboard hook (`_on_key`) that swallows the
+  key and injects a tap of VK 0xE8 so releasing Win doesn't open the Start menu. Keys we inject carry
+  `INJECT_MARK` so the hook ignores them. Other combinations use `RegisterHotKey`.
 - Never test two instances at once: their hooks chain and the older one reacts first. Kill stray processes
-  between checks.
-- Old config files holding the previous default (`ctrl+alt+h`) are migrated once (`hotkey_migrated`).
+  between manual checks (a onefile exe leaves a child process if only the parent is killed; use
+  `taskkill /F /T`).
+- Old config files holding the previous default (`ctrl+alt+h`, `OLD_DEFAULT_HOTKEY`) are migrated once,
+  tracked by the `hotkey_migrated` config key.
 
 ### Threads
 
-Only the Tk thread touches widgets or the history. Other threads (tray menu, hotkey, the image worker)
-call `App.post(Event.X, payload)`; `App.pump()` drains the queue every 100 ms. Large images are hashed
-and encoded on a worker (`History.store_image`) and added on the Tk thread (`History.add_item`).
-`poll_clipboard` must always reschedule itself (try/finally): if it ever stops, watching stops for good.
+Only the Tk thread touches widgets or the history. Other threads (tray menu, hotkey, the image worker, the
+single-instance listener) call `App.post(Event.X, payload)`; `App.pump()` drains the queue every 100 ms.
+Large images are hashed and encoded on a worker (`History.store_image`) and added on the Tk thread
+(`History.add_item`). `poll_clipboard` must always reschedule itself (try/finally): if it ever stops,
+watching stops for good. Schedule Tk timers on the root, not on a window that may be rebuilt
+(see `MainWindow.show`): a callback registered on a destroyed window raises "invalid command name".
 
 ### Conventions
 
 - Entry identity is `(type, text-or-file)` (`item_key`), never just the text.
-- Settings validation lives in `App.save_settings`, which returns `(saved, message)`.
-- User-visible name is `APP_NAME`; the data folder is still `winclipman` so existing history keeps loading.
+- Settings validation lives in `App.save_settings`, which returns `(saved, message)`; a message with
+  `saved=True` is a warning.
+- Use `APP_NAME` for anything user-visible. The code, data folder and autostart paths still say
+  `winclipman` so existing history keeps loading; don't rename the data folder without a migration.
 - Clipboard text goes into shell commands only through `PLATFORM.sanitize_arg`.
 - Tests must not touch real user data: subclass `tests/base.py::IsolatedDataTestCase`.
+- Python files are edited with CRLF line endings on Windows in places; when scripting multi-line
+  replacements use a regex with `\r?\n` rather than a literal newline.
 
 ## Testing notes
 
-- CI (`.github/workflows/ci.yml`) runs the suite on Windows, Ubuntu (under xvfb) and macOS; the release
-  workflow also builds each package and runs `tools/smoke_test.py` against it. Run a release build without
-  publishing via the workflow's manual trigger.
-- Schedule Tk timers on the root, not on a window that may be rebuilt (see `MainWindow.show`).
-
+- CI (`.github/workflows/ci.yml`) runs the suite on Windows, Ubuntu (under xvfb) and macOS on every push.
+  Check a run with `gh run list -R sabaoongfx/open-clipboard-manager` (pass `-R` and make sure `git` is on
+  PATH, or `gh` fails with "unable to find git executable").
 - The macOS backend can't be imported on Windows (PyObjC), so its tests import it against `MagicMock`
   stand-ins (see `tests/test_platforms.py`). CI runs the whole suite on a real Mac, but nothing has exercised
-  the real clipboard, hotkey or paste there; the same goes for `platform_linux.py` (its helper programs are
-  mocked in `tests/test_linux_backend.py`).
+  the real clipboard, hotkey or paste there. The same goes for `platform_linux.py`, whose helper programs
+  are mocked in `tests/test_linux_backend.py`. Only Windows has been used by hand.
 - `tests/test_window_smoke.py` builds the real window and skips itself without a display.
-- The frozen exe takes ~3 s to start (onefile unpack); an automated hotkey check must wait for that.
+- Windows-only hook tests (`tests/test_hotkeys.py`) feed fake key events to `_on_key`; the live Win+V check
+  was done by injecting keys with `keybd_event` against a running build.
+- The frozen Windows exe takes ~3 s to start (onefile unpack); an automated hotkey check must wait for the
+  hotkey to be registered, not use a fixed short delay.
 
 ## Releasing
 
 1. Bump `APP_VERSION` in `platform_base.py` and add a `CHANGELOG.md` entry.
 2. Push a `v*` tag. `.github/workflows/release.yml` runs the tests on three OSes, builds the Windows exe,
-   Linux binary and macOS app with PyInstaller, smoke-tests each, and attaches them (plus `SHA256SUMS.txt`)
-   to a **draft** release.
-3. Publish the draft.
+   Linux binary and macOS app with PyInstaller, smoke-tests each (`tools/smoke_test.py`), and the `publish`
+   job attaches them, plus `SHA256SUMS.txt`, to a **draft** release.
+3. Edit the notes and publish the draft (`gh release edit vX.Y.Z --draft=false --latest --notes-file ...`).
 
-Assets are versionless (`Open-Clipboard-Manager-x64.exe`, `-x86_64`, `-macos-arm64.zip`) so
-`releases/latest/download/<name>` always works; don't rename them without updating the README.
+Run the workflow without a tag (`gh workflow run release.yml`) to test the builds without publishing.
 
-Do not pin the Windows exe's start-up behaviour to a fixed delay in tests or docs, and keep
-`--add-data` entries for all three `actions_*.json` files in the PyInstaller commands: the
-frozen app reads them from its unpack folder.
+Assets are versionless (`Open-Clipboard-Manager-x64.exe`, `Open-Clipboard-Manager-x86_64`,
+`Open-Clipboard-Manager-macos-arm64.zip`) so `releases/latest/download/<name>` always works; don't rename
+them without updating the README. Keep `--add-data` entries for all three `actions_*.json` files in the
+PyInstaller commands: the frozen app reads them from its unpack folder.
+
+## Known gaps
+
+- Linux and macOS have never been used on a real desktop; Wayland has no global hotkey; GNOME needs the
+  AppIndicator extension for the tray icon.
+- Builds are unsigned (SmartScreen / Gatekeeper warnings); the macOS build is Apple Silicon only.
+- The table rows, scrollbar, checkboxes and thumbnails are square (the Tk table can't round them); the
+  window isn't DPI-aware, so text may look soft on high-DPI screens.
+- Actions are edited as JSON in a text editor.
