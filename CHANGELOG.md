@@ -1,6 +1,6 @@
 ﻿# Changelog
 
-## Unreleased
+## 0.2.1
 
 - **Copy button** in the History toolbar, plus a copy icon on every row: puts the entry on the clipboard without pasting it or closing the window.
 - **Trash icon on every row** to remove just that entry.
