@@ -55,11 +55,18 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt pyinstaller
 
+      # The product name and version go into the file properties of every Windows binary.
+      - name: Make the version information
+        run: |
+          python tools/make_version_file.py build/version-portable.txt Open-Clipboard-Manager-x64.exe
+          python tools/make_version_file.py build/version-installed.txt Open-Clipboard-Manager.exe
+
       - name: Build the executable
         run: >
           pyinstaller --noconfirm --clean --onefile --windowed
           --name Open-Clipboard-Manager-x64
           --icon assets/icon.ico
+          --version-file build/version-portable.txt
           --add-data "actions_windows.json;."
           --add-data "actions_macos.json;."
           --add-data "actions_linux.json;."
@@ -81,6 +88,7 @@ jobs:
           pyinstaller --noconfirm --clean --onedir --windowed
           --name Open-Clipboard-Manager
           --icon assets/icon.ico
+          --version-file build/version-installed.txt
           --add-data "actions_windows.json;."
           --add-data "actions_macos.json;."
           --add-data "actions_linux.json;."
@@ -92,10 +100,22 @@ jobs:
         run: |
           choco install innosetup -y --no-progress
           $version = python -c "from platform_base import APP_VERSION; print(APP_VERSION)"
-          & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" "/DAppVersion=$version" installer\open-clipboard-manager.iss
+          & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" "/DAppVersion=$version" "/DAppVersion4=$version.0" installer\open-clipboard-manager.iss
           if ($LASTEXITCODE -ne 0) { throw "ISCC failed with exit code $LASTEXITCODE" }
           Get-Item dist\Open-Clipboard-Manager-x64-setup.exe | Select-Object Name, Length
 
+      - name: Check the version information of the exe files and the installer
+        shell: pwsh
+        run: |
+          $version = python -c "from platform_base import APP_VERSION; print(APP_VERSION)"
+          foreach ($file in "dist\Open-Clipboard-Manager-x64.exe", "dist\Open-Clipboard-Manager\Open-Clipboard-Manager.exe", "dist\Open-Clipboard-Manager-x64-setup.exe") {
+            $info = (Get-Item $file).VersionInfo
+            "{0}: product '{1}' {2}, file version {3}, company '{4}', original name '{5}'" -f $file, $info.ProductName, $info.ProductVersion, $info.FileVersion, $info.CompanyName, $info.OriginalFilename
+            if ($info.ProductName -ne "Open Clipboard Manager") { throw "$file has the wrong product name '$($info.ProductName)'" }
+            if (-not $info.ProductVersion.StartsWith($version)) { throw "$file has product version '$($info.ProductVersion)', expected $version" }
+            if ($info.FileVersion -ne $info.ProductVersion) { throw "$file has different file and product versions" }
+            if ($info.CompanyName -ne "sabaoongfx") { throw "$file has the wrong company '$($info.CompanyName)'" }
+          }
       - name: Test the installer (silent install, start, hand-over, uninstall)
         shell: pwsh
         run: |
