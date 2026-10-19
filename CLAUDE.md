@@ -134,6 +134,13 @@ desktop entry whose `Exec` is `open-clipboard-manager --show`. The macOS app is 
 (`Open Clipboard Manager`), unlike the other binaries. `tools/make_assets.py` generates `icon.ico`,
 `icon.icns` and `icon-256.png`; the release jobs run it before packaging.
 
+Windows file properties: `tools/make_version_file.py` writes PyInstaller's version resource (product name, company,
+version and original file name, all from `platform_base`) and the Inno script sets the matching `VersionInfo*`
+directives. The release workflow checks the portable exe, the installed app's exe and the installer. Inno pads
+the installer's version strings with spaces and leaves its original file name empty, so the check trims them.
+Code-signing services (SignPath) require product name and version to be set consistently.
+
+CI notes: `hdiutil create` fails now and then with \\Resource busy\\ on macOS runners (the disk image step retries).
 When editing the workflow with scripts, normalise to LF first (the file can end up with mixed line endings).
 
 ## Releasing
