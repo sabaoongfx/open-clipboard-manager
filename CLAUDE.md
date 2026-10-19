@@ -1,4 +1,4 @@
-﻿# CLAUDE.md
+# CLAUDE.md
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
@@ -58,6 +58,9 @@ There is no linter configured. The tests are the gate.
     clipboard and hashes it (and caches that read for `get_text`/`get_image`).
   - `platform_macos.py`: PyObjC `NSPasteboard`, Carbon `RegisterEventHotKey` through ctypes, osascript paste,
     a LaunchAgent.
+- `appicon.py`: `make_icon()`, the app icon drawn with Pillow. It imports nothing else on purpose:
+  `tools/make_assets.py` runs in CI on machines without a display, and importing `winclipman` there fails on
+  Linux (pystray opens an X display at import).
 - `instance.py`: a loopback port written to `<data dir>/instance.port`. `main()` asks a running copy to open
   its window and exits; `--show` / `--settings` use it too, which is the only way to open the window on
   Wayland (no global hotkeys there). Only the commands in `instance.COMMANDS` are accepted.
@@ -115,6 +118,24 @@ watching stops for good. Schedule Tk timers on the root, not on a window that ma
 - The frozen Windows exe takes ~3 s to start (onefile unpack); an automated hotkey check must wait for the
   hotkey to be registered, not use a fixed short delay.
 
+## Packaging (all built and tested by `release.yml`)
+
+| Output | Built from | Notes |
+| --- | --- | --- |
+| `Open-Clipboard-Manager-x64.exe` | PyInstaller `--onefile` | portable; ~3 s start (unpacks on every launch) |
+| `Open-Clipboard-Manager-x64-setup.exe` | PyInstaller `--onedir` + Inno Setup (`installer/open-clipboard-manager.iss`) | per-user by default; CI installs it silently, smoke-tests the installed app, uninstalls |
+| `Open-Clipboard-Manager-x86_64` | PyInstaller `--onefile` on Ubuntu 22.04 | |
+| `Open-Clipboard-Manager-amd64.deb` | `--onedir` into `/opt` via `packaging/linux/build-deb.sh` | CI installs it with apt, validates the desktop file, runs it, removes it |
+| `Open-Clipboard-Manager-x86_64.rpm` | same folder via `packaging/linux/build-rpm.sh` (`rpmbuild` on Ubuntu) | CI installs it in a **Fedora container** |
+| `Open-Clipboard-Manager-aarch64.dmg` / `-x64.dmg` | `Open Clipboard Manager.app` on `macos-latest` (arm64) / `macos-15-intel` | CI mounts the image and runs the app from it |
+
+Linux packages use a `/usr/bin/open-clipboard-manager` symlink into `/opt/open-clipboard-manager` and a
+desktop entry whose `Exec` is `open-clipboard-manager --show`. The macOS app is named with spaces
+(`Open Clipboard Manager`), unlike the other binaries. `tools/make_assets.py` generates `icon.ico`,
+`icon.icns` and `icon-256.png`; the release jobs run it before packaging.
+
+When editing the workflow with scripts, normalise to LF first (the file can end up with mixed line endings).
+
 ## Releasing
 
 1. Bump `APP_VERSION` in `platform_base.py` and add a `CHANGELOG.md` entry.
@@ -125,9 +146,10 @@ watching stops for good. Schedule Tk timers on the root, not on a window that ma
 
 Run the workflow without a tag (`gh workflow run release.yml`) to test the builds without publishing.
 
-Assets are versionless (`Open-Clipboard-Manager-x64.exe`, `Open-Clipboard-Manager-x86_64`,
-`Open-Clipboard-Manager-macos-arm64.zip`) so `releases/latest/download/<name>` always works; don't rename
-them without updating the README. Keep `--add-data` entries for all three `actions_*.json` files in the
+Assets are versionless (the files in the Packaging table above, plus `SHA256SUMS.txt`) so
+`releases/latest/download/<name>` always works; don't rename them without updating the README. The macOS
+`.zip` files of 0.2.x were replaced by `.dmg` files: update the README's macOS links in the release that
+first ships them. Keep `--add-data` entries for all three `actions_*.json` files in the
 PyInstaller commands: the frozen app reads them from its unpack folder.
 
 ## Known gaps
