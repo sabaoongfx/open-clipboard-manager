@@ -74,6 +74,48 @@ jobs:
           name: Open-Clipboard-Manager-x64
           path: dist/Open-Clipboard-Manager-x64.exe
 
+      # The installer ships the one-folder build: it starts faster than the single-file exe, which has to
+      # unpack itself on every launch.
+      - name: Build the one-folder app for the installer
+        run: >
+          pyinstaller --noconfirm --clean --onedir --windowed
+          --name Open-Clipboard-Manager
+          --icon assets/icon.ico
+          --add-data "actions_windows.json;."
+          --add-data "actions_macos.json;."
+          --add-data "actions_linux.json;."
+          --hidden-import pystray._win32
+          winclipman.py
+
+      - name: Build the installer
+        shell: pwsh
+        run: |
+          choco install innosetup -y --no-progress
+          $version = python -c "from platform_base import APP_VERSION; print(APP_VERSION)"
+          & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" "/DAppVersion=$version" installer\open-clipboard-manager.iss
+          if ($LASTEXITCODE -ne 0) { throw "ISCC failed with exit code $LASTEXITCODE" }
+          Get-Item dist\Open-Clipboard-Manager-x64-setup.exe | Select-Object Name, Length
+
+      - name: Test the installer (silent install, start, hand-over, uninstall)
+        shell: pwsh
+        run: |
+          $dir = Join-Path $env:RUNNER_TEMP "ocm-installed"
+          $p = Start-Process dist\Open-Clipboard-Manager-x64-setup.exe -Wait -PassThru -ArgumentList "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/NOICONS", "/DIR=$dir"
+          if ($p.ExitCode -ne 0) { throw "installer exited with code $($p.ExitCode)" }
+          if (-not (Test-Path "$dir\Open-Clipboard-Manager.exe")) { throw "the installed app is missing" }
+          if (-not (Test-Path "$dir\unins000.exe")) { throw "the uninstaller is missing" }
+          python tools/smoke_test.py "$dir\Open-Clipboard-Manager.exe" 10
+          if ($LASTEXITCODE -ne 0) { throw "the installed app failed the smoke test" }
+          $u = Start-Process "$dir\unins000.exe" -Wait -PassThru -ArgumentList "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART"
+          Start-Sleep 3
+          if (Test-Path "$dir\Open-Clipboard-Manager.exe") { throw "uninstall left the app behind" }
+          "installer: install, run, hand-over and uninstall all worked"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Open-Clipboard-Manager-x64-setup
+          path: dist/Open-Clipboard-Manager-x64-setup.exe
+
   linux:
     needs: test
     permissions:
@@ -180,5 +222,6 @@ jobs:
               --notes "See the assets below to download this version."
           fi
           gh release upload "$tag" release/* --clobber
+
 
 
