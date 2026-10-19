@@ -1,4 +1,4 @@
-﻿"""Open Clipboard Manager: a cross-platform take on the Xfce Clipman clipboard manager.
+"""Open Clipboard Manager: a cross-platform take on the Xfce Clipman clipboard manager.
 
 Keeps a persistent clipboard history (text and images), offers a tray icon and a global
 hotkey popup, and runs regex-matched "actions" on a clipboard entry. OS-specific work
@@ -19,9 +19,10 @@ import tkinter as tk
 from tkinter import messagebox
 
 import pystray
-from PIL import Image, ImageDraw
+from PIL import Image
 
 import instance
+from appicon import make_icon
 from platform_base import APP_NAME
 from ui import MainWindow
 
@@ -234,15 +235,6 @@ class History:
         if self.config["save_history"]:
             save_json(HISTORY_FILE, self.items)
 
-
-def make_icon():
-    img = Image.new("RGBA", (64, 64), (0, 0, 0, 0))
-    d = ImageDraw.Draw(img)
-    d.rounded_rectangle((12, 10, 52, 58), 6, fill=(60, 120, 200), outline=(255, 255, 255), width=2)
-    d.rounded_rectangle((22, 4, 42, 16), 4, fill=(230, 230, 230), outline=(90, 90, 90), width=2)
-    for y in (26, 36, 46):
-        d.line((20, y, 44, y), fill=(255, 255, 255), width=3)
-    return img
 
 
 class App:

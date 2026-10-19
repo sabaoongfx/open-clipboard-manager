@@ -1,4 +1,4 @@
-"""Regenerates the app icon files in assets/ (png, ico, icns) and the logo in public/ from winclipman.make_icon().
+"""Regenerates the app icon files in assets/ (png, ico, icns) and the logo in public/ from appicon.make_icon().
 
     python tools/make_assets.py
 """
@@ -9,7 +9,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
 
 from PIL import Image  # noqa: E402
-from winclipman import make_icon  # noqa: E402
+from appicon import make_icon  # noqa: E402
 
 LOGO_SVG = """<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">
   <rect x="12" y="10" width="40" height="48" rx="6" fill="#3c78c8" stroke="#ffffff" stroke-width="2"/>
