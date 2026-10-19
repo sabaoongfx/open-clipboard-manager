@@ -66,6 +66,9 @@ jobs:
           --hidden-import pystray._win32
           winclipman.py
 
+      - name: Smoke test the build
+        run: python tools/smoke_test.py dist/Open-Clipboard-Manager-x64.exe 15
+
       - uses: actions/upload-artifact@v4
         with:
           name: Open-Clipboard-Manager-x64
@@ -101,6 +104,11 @@ jobs:
           --hidden-import pystray._xorg
           winclipman.py
 
+      - name: Smoke test the build (under a virtual display)
+        run: |
+          sudo apt-get install -y xvfb
+          xvfb-run -a python tools/smoke_test.py dist/Open-Clipboard-Manager-x86_64 15
+
       - uses: actions/upload-artifact@v4
         with:
           name: Open-Clipboard-Manager-x86_64
@@ -132,6 +140,9 @@ jobs:
           --hidden-import AppKit
           --hidden-import Foundation
           winclipman.py
+
+      - name: Smoke test the build
+        run: python tools/smoke_test.py dist/Open-Clipboard-Manager.app/Contents/MacOS/Open-Clipboard-Manager 15
 
       - name: Zip the app
         run: ditto -c -k --keepParent dist/Open-Clipboard-Manager.app Open-Clipboard-Manager-macos-arm64.zip
@@ -169,3 +180,5 @@ jobs:
               --notes "See the assets below to download this version."
           fi
           gh release upload "$tag" release/* --clobber
+
+
