@@ -109,7 +109,9 @@ jobs:
         run: |
           $version = python -c "from platform_base import APP_VERSION; print(APP_VERSION)"
           foreach ($file in "dist\Open-Clipboard-Manager-x64.exe", "dist\Open-Clipboard-Manager\Open-Clipboard-Manager.exe", "dist\Open-Clipboard-Manager-x64-setup.exe") {
-            $info = (Get-Item $file).VersionInfo
+            # Inno Setup pads the strings in the installer's version resource with spaces, so trim them.
+            $raw = (Get-Item $file).VersionInfo
+            $info = [pscustomobject]@{ ProductName = $raw.ProductName.Trim(); ProductVersion = $raw.ProductVersion.Trim(); FileVersion = $raw.FileVersion.Trim(); CompanyName = $raw.CompanyName.Trim(); OriginalFilename = $raw.OriginalFilename.Trim() }
             "{0}: product '{1}' {2}, file version {3}, company '{4}', original name '{5}'" -f $file, $info.ProductName, $info.ProductVersion, $info.FileVersion, $info.CompanyName, $info.OriginalFilename
             if ($info.ProductName -ne "Open Clipboard Manager") { throw "$file has the wrong product name '$($info.ProductName)'" }
             if (-not $info.ProductVersion.StartsWith($version)) { throw "$file has product version '$($info.ProductVersion)', expected $version" }
@@ -288,7 +290,15 @@ jobs:
           stage="$(mktemp -d)"
           cp -R "dist/Open Clipboard Manager.app" "$stage/"
           ln -s /Applications "$stage/Applications"
-          hdiutil create -volname "Open Clipboard Manager" -srcfolder "$stage" -ov -format UDZO "Open-Clipboard-Manager-${{ matrix.dmg }}.dmg"
+          # hdiutil sometimes fails with "Resource busy" on the runners, so try a few times.
+          for attempt in 1 2 3 4 5; do
+            if hdiutil create -volname "Open Clipboard Manager" -srcfolder "$stage" -ov -format UDZO "Open-Clipboard-Manager-${{ matrix.dmg }}.dmg"; then
+              break
+            fi
+            echo "hdiutil create failed (attempt $attempt of 5)"
+            [ "$attempt" = 5 ] && exit 1
+            sleep 10
+          done
           ls -l Open-Clipboard-Manager-*.dmg
 
       - name: Test the disk image (mount it, check the layout, run the app from it)
