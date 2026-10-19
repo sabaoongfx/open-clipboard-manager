@@ -6,6 +6,13 @@ Open Clipboard Manager: a clipboard history manager (text + images) for Windows,
 in Python/Tk, with a window styled after Open Task Manager. Public repo:
 `sabaoongfx/open-clipboard-manager`. The module is still called `winclipman` (see Conventions).
 
+## Workflow rule: test only in GitHub Actions
+
+The owner does not want tests, the app, built executables or screenshot scripts run on their own machine
+(the app hooks the global Win+V key and opens windows). Verify every change by pushing and reading the CI run:
+`ci.yml` runs the suite on Windows, Ubuntu and macOS, and `gh workflow run release.yml` builds and smoke-tests
+all three packages without publishing. The commands below document what CI runs; they are not for local use.
+
 ## Commands
 
 ```bash
