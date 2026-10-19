@@ -156,6 +156,42 @@ jobs:
           name: Open-Clipboard-Manager-x86_64
           path: dist/Open-Clipboard-Manager-x86_64
 
+      # Linux packages ship the one-folder build under /opt: it starts faster than the single-file binary.
+      - name: Build the one-folder app for the packages
+        run: >
+          pyinstaller --noconfirm --clean --onedir --windowed
+          --name open-clipboard-manager
+          --add-data "actions_windows.json:."
+          --add-data "actions_macos.json:."
+          --add-data "actions_linux.json:."
+          --hidden-import pystray._xorg
+          winclipman.py
+
+      - name: Make the package icon
+        run: python tools/make_assets.py
+
+      - name: Build the .deb
+        run: |
+          version="$(python -c 'from platform_base import APP_VERSION; print(APP_VERSION)')"
+          bash packaging/linux/build-deb.sh dist/open-clipboard-manager "$version" Open-Clipboard-Manager-amd64.deb
+
+      - name: Test the .deb (install, run, uninstall)
+        run: |
+          sudo apt-get install -y ./Open-Clipboard-Manager-amd64.deb desktop-file-utils xvfb
+          dpkg -s open-clipboard-manager | grep -E '^(Package|Version|Status)'
+          desktop-file-validate /usr/share/applications/open-clipboard-manager.desktop
+          test -f /usr/share/icons/hicolor/256x256/apps/open-clipboard-manager.png
+          xvfb-run -a python tools/smoke_test.py /usr/bin/open-clipboard-manager 15
+          sudo apt-get remove -y open-clipboard-manager
+          test ! -e /usr/bin/open-clipboard-manager
+          test ! -e /opt/open-clipboard-manager
+          echo "deb: installed, ran and removed cleanly"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Open-Clipboard-Manager-amd64-deb
+          path: Open-Clipboard-Manager-amd64.deb
+
   # Two builds: Apple Silicon (aarch64) and Intel (x64). Each runs on a machine of its own architecture.
   macos:
     needs: test

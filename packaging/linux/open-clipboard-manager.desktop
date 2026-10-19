@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=Open Clipboard Manager
+GenericName=Clipboard Manager
+Comment=Clipboard history for text and images
+Exec=open-clipboard-manager --show
+Icon=open-clipboard-manager
+Terminal=false
+Categories=Utility;
+Keywords=clipboard;history;paste;copy;
+StartupNotify=false
