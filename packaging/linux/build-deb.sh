@@ -25,7 +25,7 @@ Version: $version
 Section: utils
 Priority: optional
 Architecture: amd64
-Depends: libc6 (>= 2.35)
+Depends: libc6 (>= 2.35), libx11-6, libxft2, libfontconfig1
 Recommends: xclip | wl-clipboard, xdotool
 Maintainer: sabaoongfx <sabaoongfx@users.noreply.github.com>
 Homepage: https://github.com/sabaoongfx/open-clipboard-manager

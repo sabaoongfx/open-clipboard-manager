@@ -192,6 +192,32 @@ jobs:
           name: Open-Clipboard-Manager-amd64-deb
           path: Open-Clipboard-Manager-amd64.deb
 
+      - name: Build the .rpm
+        run: |
+          sudo apt-get install -y rpm
+          version="$(python -c 'from platform_base import APP_VERSION; print(APP_VERSION)')"
+          bash packaging/linux/build-rpm.sh dist/open-clipboard-manager "$version" Open-Clipboard-Manager-x86_64.rpm
+
+      # The rpm is installed on a real Fedora system (a container), not on the Ubuntu runner that built it.
+      - name: Test the .rpm on Fedora (install, run, uninstall)
+        run: |
+          docker run --rm -v "$PWD:/w" fedora:latest bash -c '
+            set -e
+            dnf install -y -q /w/Open-Clipboard-Manager-x86_64.rpm python3 xorg-x11-server-Xvfb xclip desktop-file-utils
+            rpm -q open-clipboard-manager
+            desktop-file-validate /usr/share/applications/open-clipboard-manager.desktop
+            test -f /usr/share/icons/hicolor/256x256/apps/open-clipboard-manager.png
+            xvfb-run -a python3 /w/tools/smoke_test.py /usr/bin/open-clipboard-manager 15
+            dnf remove -y -q open-clipboard-manager
+            test ! -e /usr/bin/open-clipboard-manager
+            test ! -e /opt/open-clipboard-manager
+            echo "rpm: installed, ran and removed cleanly on Fedora"'
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Open-Clipboard-Manager-x86_64-rpm
+          path: Open-Clipboard-Manager-x86_64.rpm
+
   # Two builds: Apple Silicon (aarch64) and Intel (x64). Each runs on a machine of its own architecture.
   macos:
     needs: test
