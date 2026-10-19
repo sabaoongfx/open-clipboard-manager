@@ -1,4 +1,4 @@
-﻿name: Release
+name: Release
 
 on:
   push:
@@ -156,11 +156,20 @@ jobs:
           name: Open-Clipboard-Manager-x86_64
           path: dist/Open-Clipboard-Manager-x86_64
 
+  # Two builds: Apple Silicon (arm64) and Intel (x64). Each runs on a machine of its own architecture.
   macos:
     needs: test
     permissions:
       contents: write
-    runs-on: macos-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-latest
+            arch: arm64
+          - runner: macos-15-intel
+            arch: x64
+    runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v4
 
@@ -187,12 +196,12 @@ jobs:
         run: python tools/smoke_test.py dist/Open-Clipboard-Manager.app/Contents/MacOS/Open-Clipboard-Manager 15
 
       - name: Zip the app
-        run: ditto -c -k --keepParent dist/Open-Clipboard-Manager.app Open-Clipboard-Manager-macos-arm64.zip
+        run: ditto -c -k --keepParent dist/Open-Clipboard-Manager.app Open-Clipboard-Manager-macos-${{ matrix.arch }}.zip
 
       - uses: actions/upload-artifact@v4
         with:
-          name: Open-Clipboard-Manager-macos-arm64
-          path: Open-Clipboard-Manager-macos-arm64.zip
+          name: Open-Clipboard-Manager-macos-${{ matrix.arch }}
+          path: Open-Clipboard-Manager-macos-${{ matrix.arch }}.zip
 
   # One job creates the draft and attaches everything, so the build jobs never race to create it.
   publish:
