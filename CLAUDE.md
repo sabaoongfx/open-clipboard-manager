@@ -5,6 +5,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 Open Clipboard Manager: a clipboard history manager (text + images) for Windows, Linux and macOS, written
 in Python/Tk, with a window styled after Open Task Manager. Public repo:
 `sabaoongfx/open-clipboard-manager`. The module is still called `winclipman` (see Conventions).
+Latest release: **v0.3.1** (history: 0.1.0 Windows exe; 0.2.x Win+V everywhere, Linux, single instance, copy/trash
+icons; 0.3.0 installer, .dmg, .deb, .rpm; 0.3.1 file properties). `CHANGELOG.md` has the details.
 
 ## Workflow rule: test only in GitHub Actions
 
@@ -21,14 +23,17 @@ python winclipman.py                                        # run the app (pytho
 python winclipman.py --show                                 # open the window of the running copy (or start one and show)
 python -m unittest discover -s tests -v                     # the whole suite (~9 s, 158 tests on Windows)
 python -m unittest discover -s tests -p test_history.py     # one file (tests import `base` from tests/, so use discover)
-python tools/make_assets.py                                 # regenerate assets/icon.* and public/*.svg
+python tools/make_assets.py                                 # regenerate assets/icon.{png,ico,icns}, icon-256.png, public/*.svg
+python tools/make_version_file.py <out> <exe name>          # Windows version resource for PyInstaller
 python tools/smoke_test.py <built exe> 15                   # start a built binary, check a second launch hands over
 ```
 
 Windows build (what CI does; the `--add-data` separator is `;` on Windows and `:` elsewhere):
 
 ```bash
+python tools/make_version_file.py build/version-portable.txt Open-Clipboard-Manager-x64.exe
 pyinstaller --noconfirm --clean --onefile --windowed --name Open-Clipboard-Manager-x64 --icon assets/icon.ico \
+  --version-file build/version-portable.txt \
   --add-data "actions_windows.json;." --add-data "actions_macos.json;." --add-data "actions_linux.json;." \
   --hidden-import pystray._win32 winclipman.py
 ```
@@ -140,30 +145,46 @@ directives. The release workflow checks the portable exe, the installed app's ex
 the installer's version strings with spaces and leaves its original file name empty, so the check trims them.
 Code-signing services (SignPath) require product name and version to be set consistently.
 
-CI notes: `hdiutil create` fails now and then with \\Resource busy\\ on macOS runners (the disk image step retries).
+CI notes: `hdiutil create` fails now and then with `Resource busy` on macOS runners (the disk image step retries up
+to five times; it did need a retry on the Intel runner).
 When editing the workflow with scripts, normalise to LF first (the file can end up with mixed line endings).
 
 ## Releasing
 
-1. Bump `APP_VERSION` in `platform_base.py` and add a `CHANGELOG.md` entry.
-2. Push a `v*` tag. `.github/workflows/release.yml` runs the tests on three OSes, builds the Windows exe,
-   Linux binary and macOS app with PyInstaller, smoke-tests each (`tools/smoke_test.py`), and the `publish`
-   job attaches them, plus `SHA256SUMS.txt`, to a **draft** release.
-3. Edit the notes and publish the draft (`gh release edit vX.Y.Z --draft=false --latest --notes-file ...`).
+1. Move the `## Unreleased` entries in `CHANGELOG.md` under a new `## X.Y.Z` heading, and bump `APP_VERSION` in
+   `platform_base.py`. If asset names or install steps changed, update the README's Install section in the same
+   commit (its links are `releases/latest/download/<name>`, so they only work once the new assets exist).
+2. Push to `main` and wait for `ci.yml` to pass on Windows, Ubuntu and macOS.
+3. Tag and push: `git tag vX.Y.Z && git push origin vX.Y.Z`. `.github/workflows/release.yml` runs the tests on three
+   OSes, builds every package in the Packaging table, installs/mounts and smoke-tests each (`tools/smoke_test.py`),
+   and the `publish` job attaches them, plus `SHA256SUMS.txt`, to a **draft** release.
+4. Check the draft has all 8 assets (`gh release view vX.Y.Z --json assets`), then publish it with notes:
+   `gh release edit vX.Y.Z --draft=false --latest --notes-file <file>`. The notes follow the earlier releases: a
+   bold one-line summary, what changed, a downloads table, and an honest "how well each package is tested" paragraph
+   (CI tested everything; only Windows used by hand; nothing signed).
+5. Verify every `releases/latest/download/<name>` link answers HTTP 200.
 
-Run the workflow without a tag (`gh workflow run release.yml`) to test the builds without publishing.
+Run the workflow without a tag (`gh workflow run release.yml`) to test the builds without publishing. Pass `-R
+sabaoongfx/open-clipboard-manager` to every `gh` command and put `C:\Program Files\Git\cmd` on PATH first. When
+reading `gh ... --json` output saved with PowerShell's `Out-File -Encoding utf8`, open it as `utf-8-sig` (it has a BOM).
 
 Assets are versionless (the files in the Packaging table above, plus `SHA256SUMS.txt`) so
-`releases/latest/download/<name>` always works; don't rename them without updating the README. The macOS
-`.zip` files of 0.2.x were replaced by `.dmg` files: update the README's macOS links in the release that
-first ships them. Keep `--add-data` entries for all three `actions_*.json` files in the
-PyInstaller commands: the frozen app reads them from its unpack folder.
-
-## Known gaps
+`releases/latest/download/<name>` always works; don't rename them without updating the README. Keep `--add-data`
+entries for all three `actions_*.json` files in the PyInstaller commands: the frozen app reads them from its
+unpack folder.
+## Known gaps and follow-ups
 
 - Linux and macOS have never been used on a real desktop; Wayland has no global hotkey; GNOME needs the
   AppIndicator extension for the tray icon.
-- Builds are unsigned (SmartScreen / Gatekeeper warnings); the macOS build is Apple Silicon only.
+- Nothing is code-signed (SmartScreen / Gatekeeper warn). Free Windows signing via **SignPath Foundation** was
+  researched but not applied for: only the owner can apply (https://signpath.org/apply), with MFA on GitHub and
+  SignPath. Their terms also want a verifiable project reputation, a "Code signing policy" section in the README
+  (add it only after acceptance, with the line "Free code signing provided by SignPath.io, certificate by SignPath
+  Foundation"), manual approval of every release, and the product name/version metadata that `make_version_file.py`
+  and the Inno script now set. Signing would go in the Windows job via `signpath/github-action-submit-signing-request`
+  after `actions/upload-artifact`; the PyInstaller exe probably needs signing before it goes into the installer, so
+  two signing requests per release. Unknown: whether a single maintainer may hold all roles, and PyInstaller caveats.
+- Not built yet: AppImage, MSI, an apt/pacman repository (Open Task Manager has them), ARM Linux.
 - The table rows, scrollbar, checkboxes and thumbnails are square (the Tk table can't round them); the
   window isn't DPI-aware, so text may look soft on high-DPI screens.
 - Actions are edited as JSON in a text editor.
