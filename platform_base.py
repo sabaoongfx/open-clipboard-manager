@@ -7,7 +7,7 @@ import os
 from abc import ABC, abstractmethod
 
 APP_NAME = "Open Clipboard Manager"
-APP_VERSION = "0.3.0"  # bump here, then tag v<version> (see CLAUDE.md > Releasing)
+APP_VERSION = "0.3.1"  # bump here, then tag v<version> (see CLAUDE.md > Releasing)
 APP_DIR = os.path.dirname(os.path.abspath(__file__))
 ENTRY_SCRIPT = os.path.join(APP_DIR, "winclipman.py")  # what "start at login" launches
 

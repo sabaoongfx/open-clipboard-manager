@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.3.1
 
 - The Windows exe files and the installer now carry the product name (*Open Clipboard Manager*), company, copyright and version in their file properties (Details tab). Needed for code signing.
 
